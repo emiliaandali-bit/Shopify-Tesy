@@ -6,12 +6,15 @@ const baseEnv: EnvConfig = {
   PORT: 8080,
   NODE_ENV: 'test',
   SHOPIFY_WEBHOOK_SECRET: 'secret',
+  SHOPIFY_STORE_DOMAIN: 'store.myshopify.com',
+  SHOPIFY_ADMIN_ACCESS_TOKEN: 'token',
   PRINTOTECA_APP_ID: 'app',
   PRINTOTECA_SECRET_KEY: 'key',
   PRINTOTECA_BRAND_NAME: 'Brand',
   PRINTOTECA_BASE_URL: 'https://printoteca.ro/api',
   PRINTOTECA_DEFAULT_SHIPPING_METHOD: 'courier',
   PRINTOTECA_ENABLE_SANDBOX: true,
+  PRINTO_TECA_WEBHOOK_SECRET: 'webhook',
 };
 
 describe('isPrintotecaLineItem', () => {

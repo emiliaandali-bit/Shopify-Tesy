@@ -4,6 +4,8 @@ import { verifyShopifyWebhook } from '../services/shopifyVerifier';
 import { handlePaidOrder } from '../services/orderHandler';
 import { EnvConfig } from '../services/env';
 import { ShopifyOrder } from '../types/shopify';
+import { cancelOrder } from '../services/printotecaClient';
+import { getPrintotecaOrderIdMetafield } from '../services/shopifyAdminClient';
 
 export default function createShopifyWebhookRouter(env: EnvConfig) {
   const router = express.Router();
@@ -29,6 +31,45 @@ export default function createShopifyWebhookRouter(env: EnvConfig) {
       handlePaidOrder(order, env);
     } catch (error) {
       logger.error('Failed to process Shopify webhook', error);
+    }
+
+    return res.json({ status: 'ok' });
+  });
+
+  router.post('/webhooks/shopify/orders-cancelled', async (req: any, res: any) => {
+    const hmac = req.header('X-Shopify-Hmac-Sha256') || req.header('x-shopify-hmac-sha256');
+    const rawBody = req.body as any;
+
+    const valid = verifyShopifyWebhook(rawBody, hmac || undefined, env);
+    if (!valid) {
+      logger.warn('Invalid Shopify webhook HMAC');
+      return res.status(401).json({ error: 'Invalid HMAC' });
+    }
+
+    try {
+      const order = JSON.parse(rawBody.toString('utf-8')) as ShopifyOrder;
+      logger.info('Received cancelled order webhook', {
+        id: order.id,
+        name: order.name,
+      });
+
+      const shopifyOrderId = Number(order.id);
+      if (Number.isNaN(shopifyOrderId)) {
+        logger.warn('Cancelled webhook missing valid order id');
+        return res.json({ status: 'ok' });
+      }
+
+      const printotecaOrderId = await getPrintotecaOrderIdMetafield(shopifyOrderId, env);
+      if (!printotecaOrderId) {
+        logger.warn(
+          `[WARN] No Printoteca metafield found for cancelled Shopify order ${shopifyOrderId}`
+        );
+        return res.json({ status: 'ok' });
+      }
+
+      await cancelOrder(printotecaOrderId, env);
+    } catch (error) {
+      logger.error('Failed to process Shopify cancelled webhook', error);
     }
 
     return res.json({ status: 'ok' });

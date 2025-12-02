@@ -23,12 +23,15 @@ All variables are required unless a default is indicated:
 - `PORT` (default `8080`)
 - `NODE_ENV` (`development` | `production`)
 - `SHOPIFY_WEBHOOK_SECRET` (from Shopify webhook configuration)
+- `SHOPIFY_STORE_DOMAIN` (e.g., `your-store.myshopify.com`)
+- `SHOPIFY_ADMIN_ACCESS_TOKEN` (Shopify Admin REST token with Orders/Fulfillment scopes)
 - `PRINTOTECA_APP_ID` (from Printoteca)
 - `PRINTOTECA_SECRET_KEY` (from Printoteca)
 - `PRINTOTECA_BRAND_NAME`
 - `PRINTOTECA_BASE_URL` (default `https://printoteca.ro/api`)
 - `PRINTOTECA_DEFAULT_SHIPPING_METHOD` (`regular` | `recorded` | `courier` | `collection`, default `courier`)
 - `PRINTOTECA_ENABLE_SANDBOX` (`true` | `false`; when true, orders are **not** sent to Printoteca and requests are only logged)
+- `PRINTO_TECA_WEBHOOK_SECRET` (optional, shared secret to verify Printoteca status webhooks)
 
 Compatibility aliases supported by the app (for teams that already use them elsewhere):
 - `DEFAULT_SHIPPING_METHOD` → used when `PRINTOTECA_DEFAULT_SHIPPING_METHOD` is not set
@@ -37,6 +40,8 @@ Compatibility aliases supported by the app (for teams that already use them else
 ## Endpoints
 
 - `POST /webhooks/shopify/orders-paid` — Shopify webhook endpoint. It validates the HMAC header and triggers order mapping and submission.
+- `POST /webhooks/shopify/orders-cancelled` — Shopify webhook endpoint to cancel Printoteca orders when the Shopify order is cancelled.
+- `POST /webhooks/printoteca/order-status` — Printoteca webhook endpoint to sync shipment/fulfillment info back to Shopify.
 - `GET /health` — Basic health check.
 - `GET /debug/order-schema` — Example Printoteca order payload for quick reference.
 
