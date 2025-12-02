@@ -17,7 +17,7 @@ export default function createServer(env: EnvConfig) {
   app.use(healthRouter);
 
   // basic error handler
-  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  app.use((err: any, _req: any, res: any, _next: any) => {
     logger.error('Unhandled error', err);
     res.status(500).json({ error: 'Internal server error' });
   });

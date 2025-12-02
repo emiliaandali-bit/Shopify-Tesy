@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { EnvConfig } from './env';
 
-export function verifyShopifyWebhook(rawBody: Buffer, hmacHeader: string | undefined, env: EnvConfig): boolean {
+export function verifyShopifyWebhook(rawBody: any, hmacHeader: string | undefined, env: EnvConfig): boolean {
   if (!hmacHeader) return false;
   const digest = crypto
     .createHmac('sha256', env.SHOPIFY_WEBHOOK_SECRET)

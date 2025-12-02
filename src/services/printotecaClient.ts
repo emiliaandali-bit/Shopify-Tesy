@@ -17,7 +17,7 @@ export async function sendOrderToPrintoteca(order: PrintotecaOrder, env: EnvConf
 
   if (env.PRINTOTECA_ENABLE_SANDBOX) {
     logger.info('Sandbox mode enabled - not sending to Printoteca', { url });
-    logger.debug('Sandbox payload preview', order);
+    logger.debug('Sandbox payload preview\n' + JSON.stringify(order, null, 2));
     return { sandbox: true, success: true };
   }
 
