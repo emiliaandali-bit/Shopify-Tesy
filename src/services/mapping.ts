@@ -17,30 +17,42 @@ function extractDesigns(properties: ShopifyLineItem['properties']): {
   designs: PrintotecaOrderItem['designs'];
   mockups: PrintotecaOrderItem['mockups'];
 } {
-  const result: { designs: PrintotecaOrderItem['designs']; mockups: PrintotecaOrderItem['mockups'] } = {
-    designs: {},
-    mockups: {},
-  };
+  const props = properties || [];
 
-  if (!properties) return result;
+  let frontDesignUrl: string | undefined;
+  let backDesignUrl: string | undefined;
+  let customizationImageUrl: string | undefined;
 
-  properties.forEach((prop) => {
-    if (prop.name === '_tib_design_link_1' && prop.value) {
-      result.designs = { ...result.designs, front: prop.value };
-    }
-    if (prop.name === '_tib_design_link_2' && prop.value) {
-      result.designs = { ...result.designs, back: prop.value };
-    }
-    if (prop.name === '_customization_image' && prop.value) {
-      // treat customization image as both design and optional mockup
-      if (!result.designs?.front) {
-        result.designs = { ...result.designs, front: prop.value };
-      }
-      result.mockups = { ...result.mockups, front: prop.value };
-    }
-  });
+  for (const prop of props) {
+    const key = prop.name;
+    const value = prop.value;
 
-  return result;
+    if (key === '_tib_design_link_1' && value) {
+      frontDesignUrl = value;
+    } else if (key === '_tib_design_link_2' && value) {
+      backDesignUrl = value;
+    } else if (key === '_customization_image' && value) {
+      customizationImageUrl = value;
+    }
+  }
+
+  const designs: PrintotecaOrderItem['designs'] = {};
+  if (frontDesignUrl) {
+    designs.front = frontDesignUrl;
+  } else if (customizationImageUrl) {
+    designs.front = customizationImageUrl;
+  }
+
+  if (backDesignUrl) {
+    designs.back = backDesignUrl;
+  }
+
+  const mockups: PrintotecaOrderItem['mockups'] = {};
+  if (customizationImageUrl) {
+    mockups.front = customizationImageUrl;
+  }
+
+  return { designs, mockups };
 }
 
 async function checkDesignUrl(url?: string): Promise<void> {

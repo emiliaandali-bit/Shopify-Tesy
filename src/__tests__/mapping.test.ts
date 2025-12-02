@@ -107,6 +107,32 @@ describe('mapShopifyOrderToPrintoteca', () => {
     expect(result?.items[0].designs?.back).toBe('back');
   });
 
+  it('maps tib design links with customization image as mockup', async () => {
+    const order: ShopifyOrder = {
+      ...baseOrder,
+      line_items: [
+        {
+          id: '1',
+          title: 'Tee',
+          quantity: 1,
+          price: '10',
+          sku: 'SKU1',
+          vendor: 'Printoteca',
+          properties: [
+            { name: '_tib_design_link_1', value: 'front-link' },
+            { name: '_tib_design_link_2', value: 'back-link' },
+            { name: '_customization_image', value: 'mockup-link' },
+          ],
+        },
+      ],
+    };
+
+    const result = await mapShopifyOrderToPrintoteca(order, baseEnv);
+    expect(result?.items[0].designs?.front).toBe('front-link');
+    expect(result?.items[0].designs?.back).toBe('back-link');
+    expect(result?.items[0].mockups?.front).toBe('mockup-link');
+  });
+
   it('maps customization image when tib links missing', async () => {
     const order: ShopifyOrder = {
       ...baseOrder,
@@ -125,5 +151,6 @@ describe('mapShopifyOrderToPrintoteca', () => {
 
     const result = await mapShopifyOrderToPrintoteca(order, baseEnv);
     expect(result?.items[0].designs?.front).toBe('mockup');
+    expect(result?.items[0].mockups?.front).toBe('mockup');
   });
 });
