@@ -9,16 +9,21 @@ export interface EnvConfig {
   PORT: number;
   NODE_ENV: 'development' | 'production' | string;
   SHOPIFY_WEBHOOK_SECRET: string;
+  SHOPIFY_STORE_DOMAIN: string;
+  SHOPIFY_ADMIN_ACCESS_TOKEN: string;
   PRINTOTECA_APP_ID: string;
   PRINTOTECA_SECRET_KEY: string;
   PRINTOTECA_BRAND_NAME: string;
   PRINTOTECA_BASE_URL: string;
   PRINTOTECA_DEFAULT_SHIPPING_METHOD: ShippingMethod;
   PRINTOTECA_ENABLE_SANDBOX: boolean;
+  PRINTO_TECA_WEBHOOK_SECRET?: string;
 }
 
 const requiredVars: Array<keyof EnvConfig> = [
   'SHOPIFY_WEBHOOK_SECRET',
+  'SHOPIFY_STORE_DOMAIN',
+  'SHOPIFY_ADMIN_ACCESS_TOKEN',
   'PRINTOTECA_APP_ID',
   'PRINTOTECA_SECRET_KEY',
   'PRINTOTECA_BRAND_NAME',
@@ -67,12 +72,15 @@ export function loadEnv(): EnvConfig {
     PORT: parseInt(process.env.PORT || '8080', 10),
     NODE_ENV: (process.env.NODE_ENV as EnvConfig['NODE_ENV']) || 'development',
     SHOPIFY_WEBHOOK_SECRET: requireEnv('SHOPIFY_WEBHOOK_SECRET'),
+    SHOPIFY_STORE_DOMAIN: requireEnv('SHOPIFY_STORE_DOMAIN'),
+    SHOPIFY_ADMIN_ACCESS_TOKEN: requireEnv('SHOPIFY_ADMIN_ACCESS_TOKEN'),
     PRINTOTECA_APP_ID: requireEnv('PRINTOTECA_APP_ID'),
     PRINTOTECA_SECRET_KEY: requireEnv('PRINTOTECA_SECRET_KEY'),
     PRINTOTECA_BRAND_NAME: requireEnv('PRINTOTECA_BRAND_NAME'),
     PRINTOTECA_BASE_URL: baseUrlEnv || 'https://printoteca.ro/api',
     PRINTOTECA_DEFAULT_SHIPPING_METHOD: parseShippingMethod(shippingMethodEnv),
     PRINTOTECA_ENABLE_SANDBOX: parseBoolean(process.env.PRINTOTECA_ENABLE_SANDBOX ?? 'true'),
+    PRINTO_TECA_WEBHOOK_SECRET: process.env.PRINTO_TECA_WEBHOOK_SECRET,
   };
 
   requiredVars.forEach((key) => {

@@ -34,5 +34,30 @@ export default function createShopifyWebhookRouter(env: EnvConfig) {
     return res.json({ status: 'ok' });
   });
 
+  router.post('/webhooks/shopify/orders-cancelled', async (req: any, res: any) => {
+    const hmac = req.header('X-Shopify-Hmac-Sha256') || req.header('x-shopify-hmac-sha256');
+    const rawBody = req.body as any;
+
+    const valid = verifyShopifyWebhook(rawBody, hmac || undefined, env);
+    if (!valid) {
+      logger.warn('Invalid Shopify webhook HMAC');
+      return res.status(401).json({ error: 'Invalid HMAC' });
+    }
+
+    try {
+      const order = JSON.parse(rawBody.toString('utf-8')) as ShopifyOrder;
+      logger.info('Received cancelled order webhook', {
+        id: order.id,
+        name: order.name,
+      });
+    } catch (error) {
+      logger.error('Failed to process Shopify cancelled webhook', {
+        error: (error as Error)?.message,
+      });
+    }
+
+    return res.json({ status: 'ok' });
+  });
+
   return router;
 }

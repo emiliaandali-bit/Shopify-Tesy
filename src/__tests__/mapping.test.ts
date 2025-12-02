@@ -6,12 +6,15 @@ const baseEnv: EnvConfig = {
   PORT: 8080,
   NODE_ENV: 'test',
   SHOPIFY_WEBHOOK_SECRET: 'secret',
+  SHOPIFY_STORE_DOMAIN: 'store.myshopify.com',
+  SHOPIFY_ADMIN_ACCESS_TOKEN: 'token',
   PRINTOTECA_APP_ID: 'app',
   PRINTOTECA_SECRET_KEY: 'key',
   PRINTOTECA_BRAND_NAME: 'Brand',
   PRINTOTECA_BASE_URL: 'https://printoteca.ro/api',
   PRINTOTECA_DEFAULT_SHIPPING_METHOD: 'courier',
   PRINTOTECA_ENABLE_SANDBOX: true,
+  PRINTO_TECA_WEBHOOK_SECRET: 'webhook',
 };
 
 describe('isPrintotecaLineItem', () => {
@@ -72,7 +75,9 @@ describe('mapShopifyOrderToPrintoteca', () => {
           price: '10',
           sku: 'SKU1',
           vendor: 'Printoteca',
-          properties: [{ name: '_tib_design_link_1', value: 'https://example.com/front.png' }],
+          properties: [
+            { name: '_tib_design_link_1', value: 'https://example.com/front.png?printarea=30x40' },
+          ],
         },
       ],
     };
@@ -95,8 +100,8 @@ describe('mapShopifyOrderToPrintoteca', () => {
           sku: 'SKU1',
           vendor: 'Printoteca',
           properties: [
-            { name: '_tib_design_link_1', value: 'front' },
-            { name: '_tib_design_link_2', value: 'back' },
+            { name: '_tib_design_link_1', value: 'front?printarea=30x40' },
+            { name: '_tib_design_link_2', value: 'back?printarea=30x40' },
           ],
         },
       ],
@@ -119,9 +124,9 @@ describe('mapShopifyOrderToPrintoteca', () => {
           sku: 'SKU1',
           vendor: 'Printoteca',
           properties: [
-            { name: '_tib_design_link_1', value: 'front-link' },
-            { name: '_tib_design_link_2', value: 'back-link' },
-            { name: '_customization_image', value: 'mockup-link' },
+            { name: '_tib_design_link_1', value: 'front-link?printarea=30x40' },
+            { name: '_tib_design_link_2', value: 'back-link?printarea=30x40' },
+            { name: '_customization_image', value: 'mockup-link?printarea=30x40' },
           ],
         },
       ],
@@ -144,7 +149,7 @@ describe('mapShopifyOrderToPrintoteca', () => {
           price: '10',
           sku: 'SKU1',
           vendor: 'Printoteca',
-          properties: [{ name: '_customization_image', value: 'mockup' }],
+          properties: [{ name: '_customization_image', value: 'mockup?printarea=30x40' }],
         },
       ],
     };
