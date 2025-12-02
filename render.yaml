@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: shopify-printoteca-bridge
+    env: node
+    plan: free
+    buildCommand: "npm install && npm run build"
+    startCommand: "npm start"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8080
+      - key: SHOPIFY_WEBHOOK_SECRET
+        sync: false
+      - key: PRINTOTECA_APP_ID
+        sync: false
+      - key: PRINTOTECA_SECRET_KEY
+        sync: false
+      - key: PRINTOTECA_BRAND_NAME
+        sync: false
+      - key: PRINTOTECA_BASE_URL
+        value: https://printoteca.ro/api
+      - key: PRINTOTECA_DEFAULT_SHIPPING_METHOD
+        value: courier
+      - key: PRINTOTECA_ENABLE_SANDBOX
+        value: "true"
