@@ -19,8 +19,8 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@types/jest": "^29.5.12",
-    "@types/node": "^22.9.3",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.17.9",
     "axios": "^1.7.8",
     "dotenv": "^16.4.5",
     "express": "^4.21.1"
