@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
 import logger from '../services/logger';
 import { verifyShopifyWebhook } from '../services/shopifyVerifier';
 import { handlePaidOrder } from '../services/orderHandler';
@@ -8,7 +8,7 @@ import { ShopifyOrder } from '../types/shopify';
 export default function createShopifyWebhookRouter(env: EnvConfig): express.Router {
   const router = express.Router();
 
-  router.post('/webhooks/shopify/orders-paid', async (req: Request, res: Response) => {
+  router.post('/webhooks/shopify/orders-paid', async (req: any, res: any) => {
     const hmac = req.header('X-Shopify-Hmac-Sha256') || req.header('x-shopify-hmac-sha256');
     const rawBody = req.body as Buffer;
 

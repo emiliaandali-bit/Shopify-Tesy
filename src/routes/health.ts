@@ -1,9 +1,9 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
 import { PrintotecaOrder } from '../types/printoteca';
 
 const router = express.Router();
 
-router.get('/health', (_req: Request, res: Response) => {
+router.get('/health', (_req: any, res: any) => {
   res.json({
     status: 'ok',
     uptime: process.uptime(),
@@ -11,7 +11,7 @@ router.get('/health', (_req: Request, res: Response) => {
   });
 });
 
-router.get('/debug/order-schema', (_req: Request, res: Response) => {
+router.get('/debug/order-schema', (_req: any, res: any) => {
   const example: PrintotecaOrder = {
     brandName: 'Your Brand',
     external_id: '123456',

@@ -1,4 +1,4 @@
-import express, { NextFunction, Request, Response } from 'express';
+import express from 'express';
 import healthRouter from './routes/health';
 import createShopifyWebhookRouter from './routes/shopifyWebhooks';
 import { EnvConfig } from './services/env';
@@ -17,7 +17,7 @@ export default function createServer(env: EnvConfig) {
   app.use(healthRouter);
 
   // basic error handler
-  app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: any, _req: any, res: any, _next: any) => {
     logger.error('Unhandled error', err);
     res.status(500).json({ error: 'Internal server error' });
   });
