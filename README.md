@@ -30,6 +30,10 @@ All variables are required unless a default is indicated:
 - `PRINTOTECA_DEFAULT_SHIPPING_METHOD` (`regular` | `recorded` | `courier` | `collection`, default `courier`)
 - `PRINTOTECA_ENABLE_SANDBOX` (`true` | `false`; when true, orders are **not** sent to Printoteca and requests are only logged)
 
+Compatibility aliases supported by the app (for teams that already use them elsewhere):
+- `DEFAULT_SHIPPING_METHOD` → used when `PRINTOTECA_DEFAULT_SHIPPING_METHOD` is not set
+- `PRINTOTECA_API_BASE` → used when `PRINTOTECA_BASE_URL` is not set
+
 ## Endpoints
 
 - `POST /webhooks/shopify/orders-paid` — Shopify webhook endpoint. It validates the HMAC header and triggers order mapping and submission.
