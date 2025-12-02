@@ -75,7 +75,9 @@ describe('mapShopifyOrderToPrintoteca', () => {
           price: '10',
           sku: 'SKU1',
           vendor: 'Printoteca',
-          properties: [{ name: '_tib_design_link_1', value: 'https://example.com/front.png' }],
+          properties: [
+            { name: '_tib_design_link_1', value: 'https://example.com/front.png?printarea=30x40' },
+          ],
         },
       ],
     };
@@ -98,8 +100,8 @@ describe('mapShopifyOrderToPrintoteca', () => {
           sku: 'SKU1',
           vendor: 'Printoteca',
           properties: [
-            { name: '_tib_design_link_1', value: 'front' },
-            { name: '_tib_design_link_2', value: 'back' },
+            { name: '_tib_design_link_1', value: 'front?printarea=30x40' },
+            { name: '_tib_design_link_2', value: 'back?printarea=30x40' },
           ],
         },
       ],
@@ -122,9 +124,9 @@ describe('mapShopifyOrderToPrintoteca', () => {
           sku: 'SKU1',
           vendor: 'Printoteca',
           properties: [
-            { name: '_tib_design_link_1', value: 'front-link' },
-            { name: '_tib_design_link_2', value: 'back-link' },
-            { name: '_customization_image', value: 'mockup-link' },
+            { name: '_tib_design_link_1', value: 'front-link?printarea=30x40' },
+            { name: '_tib_design_link_2', value: 'back-link?printarea=30x40' },
+            { name: '_customization_image', value: 'mockup-link?printarea=30x40' },
           ],
         },
       ],
@@ -147,7 +149,7 @@ describe('mapShopifyOrderToPrintoteca', () => {
           price: '10',
           sku: 'SKU1',
           vendor: 'Printoteca',
-          properties: [{ name: '_customization_image', value: 'mockup' }],
+          properties: [{ name: '_customization_image', value: 'mockup?printarea=30x40' }],
         },
       ],
     };

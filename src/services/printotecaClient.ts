@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import crypto from 'crypto';
 import { EnvConfig } from './env';
 import logger from './logger';
@@ -22,22 +22,33 @@ export async function sendOrderToPrintoteca(order: PrintotecaOrder, env: EnvConf
     return { sandbox: true, success: true };
   }
 
-  const response = await axios.post(url, bodyString, {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (response.status < 200 || response.status >= 300) {
-    logger.error('Printoteca API responded with non-success', {
-      status: response.status,
-      data: response.data,
+  try {
+    const response = await axios.post(url, bodyString, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
-    throw new Error(`Printoteca API error ${response.status}`);
-  }
 
-  logger.info('Printoteca API call successful', { status: response.status });
-  return response.data;
+    logger.info('Printoteca API call successful', {
+      status: response.status,
+      externalId: order.external_id,
+      printotecaId: (response.data as any)?.id,
+    });
+    return response.data;
+  } catch (err) {
+    const error = err as AxiosError<any>;
+    const status = error.response?.status;
+    const data = error.response?.data;
+
+    logger.error('Failed to send order to Printoteca', {
+      externalId: order.external_id,
+      status,
+      printotecaError:
+        data && typeof data === 'object' ? data : String(data ?? error.message ?? 'Unknown error'),
+    });
+
+    throw error;
+  }
 }
 
 export async function cancelOrder(

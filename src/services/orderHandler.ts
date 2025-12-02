@@ -30,6 +30,6 @@ export async function handlePaidOrder(order: ShopifyOrder, env: EnvConfig): Prom
       );
     }
   } catch (error) {
-    logger.error(`Failed to process order ${order.id}: ${(error as Error).message}`, error);
+    logger.error(`Failed to process order ${order.id}: ${(error as Error).message}`);
   }
 }

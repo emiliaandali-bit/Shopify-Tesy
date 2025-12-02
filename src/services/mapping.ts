@@ -6,6 +6,12 @@ import { ShopifyLineItem, ShopifyOrder } from '../types/shopify';
 
 const CHECK_DESIGN_URLS = false; // flip to true to send HEAD requests before submitting designs
 
+function normalizeDesignUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  const [base] = url.split('?');
+  return base;
+}
+
 export function isPrintotecaLineItem(line: ShopifyLineItem): boolean {
   if (!line.sku) return false;
   const vendorMatch = (line.vendor || '').toLowerCase() === 'printoteca';
@@ -37,19 +43,23 @@ function extractDesigns(properties: ShopifyLineItem['properties']): {
   }
 
   const designs: PrintotecaOrderItem['designs'] = {};
-  if (frontDesignUrl) {
-    designs.front = frontDesignUrl;
-  } else if (customizationImageUrl) {
-    designs.front = customizationImageUrl;
+  const normalizedFront = normalizeDesignUrl(frontDesignUrl);
+  const normalizedBack = normalizeDesignUrl(backDesignUrl);
+  const normalizedCustomization = normalizeDesignUrl(customizationImageUrl);
+
+  if (normalizedFront) {
+    designs.front = normalizedFront;
+  } else if (normalizedCustomization) {
+    designs.front = normalizedCustomization;
   }
 
-  if (backDesignUrl) {
-    designs.back = backDesignUrl;
+  if (normalizedBack) {
+    designs.back = normalizedBack;
   }
 
   const mockups: PrintotecaOrderItem['mockups'] = {};
-  if (customizationImageUrl) {
-    mockups.front = customizationImageUrl;
+  if (normalizedCustomization) {
+    mockups.front = normalizedCustomization;
   }
 
   return { designs, mockups };
