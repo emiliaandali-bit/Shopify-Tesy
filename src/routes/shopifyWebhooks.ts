@@ -10,7 +10,7 @@ export default function createShopifyWebhookRouter(env: EnvConfig): express.Rout
 
   router.post('/webhooks/shopify/orders-paid', async (req: any, res: any) => {
     const hmac = req.header('X-Shopify-Hmac-Sha256') || req.header('x-shopify-hmac-sha256');
-    const rawBody = req.body as Buffer;
+    const rawBody = req.body as any;
 
     const valid = verifyShopifyWebhook(rawBody, hmac || undefined, env);
     if (!valid) {
