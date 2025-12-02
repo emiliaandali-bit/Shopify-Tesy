@@ -5,7 +5,7 @@ import { handlePaidOrder } from '../services/orderHandler';
 import { EnvConfig } from '../services/env';
 import { ShopifyOrder } from '../types/shopify';
 
-export default function createShopifyWebhookRouter(env: EnvConfig): express.Router {
+export default function createShopifyWebhookRouter(env: EnvConfig) {
   const router = express.Router();
 
   router.post('/webhooks/shopify/orders-paid', async (req: any, res: any) => {
