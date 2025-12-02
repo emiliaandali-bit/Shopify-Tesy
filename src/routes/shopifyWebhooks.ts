@@ -4,8 +4,6 @@ import { verifyShopifyWebhook } from '../services/shopifyVerifier';
 import { handlePaidOrder } from '../services/orderHandler';
 import { EnvConfig } from '../services/env';
 import { ShopifyOrder } from '../types/shopify';
-import { cancelOrder } from '../services/printotecaClient';
-import { getPrintotecaOrderIdMetafield } from '../services/shopifyAdminClient';
 
 export default function createShopifyWebhookRouter(env: EnvConfig) {
   const router = express.Router();
@@ -52,24 +50,10 @@ export default function createShopifyWebhookRouter(env: EnvConfig) {
         id: order.id,
         name: order.name,
       });
-
-      const shopifyOrderId = Number(order.id);
-      if (Number.isNaN(shopifyOrderId)) {
-        logger.warn('Cancelled webhook missing valid order id');
-        return res.json({ status: 'ok' });
-      }
-
-      const printotecaOrderId = await getPrintotecaOrderIdMetafield(shopifyOrderId, env);
-      if (!printotecaOrderId) {
-        logger.warn(
-          `[WARN] No Printoteca metafield found for cancelled Shopify order ${shopifyOrderId}`
-        );
-        return res.json({ status: 'ok' });
-      }
-
-      await cancelOrder(printotecaOrderId, env);
     } catch (error) {
-      logger.error('Failed to process Shopify cancelled webhook', error);
+      logger.error('Failed to process Shopify cancelled webhook', {
+        error: (error as Error)?.message,
+      });
     }
 
     return res.json({ status: 'ok' });

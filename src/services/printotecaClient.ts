@@ -16,9 +16,10 @@ export async function sendOrderToPrintoteca(order: PrintotecaOrder, env: EnvConf
     env.PRINTOTECA_APP_ID
   )}&Signature=${encodeURIComponent(signature)}`;
 
+  logger.debug('Printoteca request payload:\n' + JSON.stringify(order, null, 2));
+
   if (env.PRINTOTECA_ENABLE_SANDBOX) {
     logger.info('Sandbox mode enabled - not sending to Printoteca', { url });
-    logger.debug('Sandbox payload preview\n' + JSON.stringify(order, null, 2));
     return { sandbox: true, success: true };
   }
 
