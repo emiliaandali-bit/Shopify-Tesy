@@ -1,5 +1,5 @@
 const express = require('express');
-const { shopifyHmacMiddleware } = require('../middlewares/shopifyHmac.middleware');
+//const { shopifyHmacMiddleware } = require('../middlewares/shopifyHmac.middleware');
 const {
   handleDraftOrder,
   handleOrdersPaid,
@@ -8,7 +8,7 @@ const {
 
 function createShopifyRouter(env) {
   const router = express.Router();
-  const verifyHmac = shopifyHmacMiddleware(env);
+ // const verifyHmac = shopifyHmacMiddleware(env);
 
   router.post('/webhooks/shopify/orders-paid', verifyHmac, handleOrdersPaid);
   router.post('/webhooks/shopify/orders-cancelled', verifyHmac, handleOrdersCancelled);
