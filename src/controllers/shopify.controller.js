@@ -1,0 +1,49 @@
+const logger = require('../services/logger');
+const { processDraftOrder, processPaidOrder, processCancelledOrder } = require('../services/shopify.service');
+
+async function handleDraftOrder(req, res) {
+  const payload = req.body;
+  if (!payload) {
+    return res.status(400).json({ error: 'Invalid JSON payload' });
+  }
+
+  const result = await processDraftOrder(payload, req.app.locals.env);
+  if (result.error) {
+    return res.status(422).json({ error: result.error, logId: result.logId });
+  }
+  return res.status(202).json({ status: 'queued', logId: result.logId });
+}
+
+async function handleOrdersPaid(req, res) {
+  const payload = req.body;
+  if (!payload) {
+    logger.error('Failed to parse Shopify paid order payload');
+    return res.status(400).json({ error: 'Invalid JSON payload' });
+  }
+
+  logger.info('Shopify orders-paid payload', payload);
+  await processPaidOrder(payload, req.app.locals.env);
+  return res.json({ status: 'ok' });
+}
+
+async function handleOrdersCancelled(req, res) {
+  const payload = req.body;
+  if (!payload) {
+    logger.error('Failed to parse Shopify cancelled order payload');
+    return res.status(400).json({ error: 'Invalid JSON payload' });
+  }
+
+  try {
+    await processCancelledOrder(payload, req.app.locals.env);
+  } catch (error) {
+    logger.error('Failed to process Shopify cancelled order', { error: error?.message });
+  }
+
+  return res.json({ status: 'ok' });
+}
+
+module.exports = {
+  handleDraftOrder,
+  handleOrdersPaid,
+  handleOrdersCancelled,
+};
