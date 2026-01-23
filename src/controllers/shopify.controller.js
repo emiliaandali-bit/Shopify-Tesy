@@ -11,7 +11,7 @@ function parseShopifyPayload(req) {
 }
 
 async function handleDraftOrder(req, res) {
-  const payload = parseShopifyPayload(req);
+  const payload = JSON.parse(req.body.toString('utf8'));
   if (!payload) {
     return res.status(400).json({ error: 'Invalid JSON payload' });
   }
