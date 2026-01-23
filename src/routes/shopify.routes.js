@@ -10,9 +10,9 @@ function createShopifyRouter(env) {
   const router = express.Router();
  // const verifyHmac = shopifyHmacMiddleware(env);
 
-  router.post('/webhooks/shopify/orders-paid', verifyHmac, handleOrdersPaid);
-  router.post('/webhooks/shopify/orders-cancelled', verifyHmac, handleOrdersCancelled);
-  router.post('/webhooks/shopify/draft-orders', verifyHmac, handleDraftOrder);
+  router.post('/webhooks/shopify/orders-paid', handleOrdersPaid);
+  router.post('/webhooks/shopify/orders-cancelled', handleOrdersCancelled);
+  router.post('/webhooks/shopify/draft-orders', handleDraftOrder);
 
   return router;
 }
