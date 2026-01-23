@@ -52,6 +52,13 @@ class TransactionLog {
     await writeJsonFile(nextLogs);
     return true;
   }
+
+  static async findByWarehouseOrderId(warehouseOrderId) {
+    const logs = await readJsonFile();
+    return (
+      logs.find((log) => String(log?.warehouseResponse?.id) === String(warehouseOrderId)) || null
+    );
+  }
 }
 
 module.exports = TransactionLog;

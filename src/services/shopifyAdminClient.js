@@ -1,12 +1,13 @@
 const axios = require('axios');
 const logger = require('./logger');
 
-function createClient(env) {
+function createClient(env, version = '2025-07') {
+  const token = env.SHOPIFY_ADMIN_ACCESS_TOKEN || process.env.SHOPIFY_ACCESS_TOKEN;
   return axios.create({
-    baseURL: `https://${env.SHOPIFY_STORE_DOMAIN}/admin/api/2025-07`,
+    baseURL: `https://${env.SHOPIFY_STORE_DOMAIN}/admin/api/${version}`,
     headers: {
       'Content-Type': 'application/json',
-      'X-Shopify-Access-Token': env.SHOPIFY_ADMIN_ACCESS_TOKEN,
+      'X-Shopify-Access-Token': token,
     },
   });
 }
@@ -107,8 +108,42 @@ async function syncFulfillmentFromPrintotecaStatus(orderId, printotecaPayload, e
   }
 }
 
+async function sendTrackingFulfillment(orderId, tracking, env) {
+  const client = createClient(env, '2023-10');
+  try {
+    await client.post(`/orders/${orderId}/fulfillments.json`, {
+      fulfillment: {
+        tracking_info: {
+          number: tracking.tracking_number,
+          url: tracking.tracking_url,
+          company: tracking.tracking_company,
+        },
+        notify_customer: true,
+      },
+    });
+    logger.info('Sent Shopify fulfillment tracking update', { orderId });
+  } catch (error) {
+    logger.error('Failed to send Shopify fulfillment tracking', {
+      orderId,
+      error: error?.response?.data || error?.message,
+      status: error?.response?.status,
+    });
+    throw error;
+  }
+}
+
+async function fetchShopifyOrder(orderId, env) {
+  const client = createClient(env);
+  const response = await client.get(`/orders/${orderId}.json`, {
+    params: { status: 'any' },
+  });
+  return response.data?.order;
+}
+
 module.exports = {
   savePrintotecaOrderIdMetafield,
   getPrintotecaOrderIdMetafield,
+  fetchShopifyOrder,
   syncFulfillmentFromPrintotecaStatus,
+  sendTrackingFulfillment,
 };

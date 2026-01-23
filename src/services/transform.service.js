@@ -160,19 +160,23 @@ function transformDraftOrderToWarehouse(payload, env) {
   const commentParts = [`Draft order ${payload?.name || payload?.id || 'unknown'}`];
   if (payload?.note) commentParts.push(`note: ${payload.note}`);
 
-  return {
-    data: {
-      brandName: env.PRINTOTECA_BRAND_NAME,
-      external_id: String(payload?.id || payload?.name || ''),
-      comment: commentParts.join(', '),
-      currency: payload?.currency || payload?.presentment_currency || 'USD',
-      orderDate: toIsoString(payload?.created_at) || new Date().toISOString(),
-      shipping_address: shippingAddress,
-      shipping: {
-        shippingMethod: env.PRINTOTECA_DEFAULT_SHIPPING_METHOD,
-      },
-      items,
+  const data = {
+    brandName: env.PRINTOTECA_BRAND_NAME,
+    external_id: String(payload?.id || payload?.name || ''),
+    comment: commentParts.join(', '),
+    currency: payload?.currency || payload?.presentment_currency || 'USD',
+    orderDate: toIsoString(payload?.created_at) || new Date().toISOString(),
+    shipping_address: shippingAddress,
+    shipping: {
+      shippingMethod: env.PRINTOTECA_DEFAULT_SHIPPING_METHOD,
     },
+    items,
+  };
+
+  console.log('Transformed:', data);
+
+  return {
+    data,
   };
 }
 
@@ -194,19 +198,23 @@ function transformPaidOrderToWarehouse(payload, env) {
   const commentParts = [`Shopify order ${payload?.name || payload?.id || 'unknown'}`];
   if (payload?.note) commentParts.push(`note: ${payload.note}`);
 
-  return {
-    data: {
-      brandName: env.PRINTOTECA_BRAND_NAME,
-      external_id: String(payload?.id || payload?.name || ''),
-      comment: commentParts.join(', '),
-      currency: payload?.currency || payload?.presentment_currency || 'USD',
-      orderDate: toIsoString(payload?.created_at) || new Date().toISOString(),
-      shipping_address: shippingAddress,
-      shipping: {
-        shippingMethod: env.PRINTOTECA_DEFAULT_SHIPPING_METHOD,
-      },
-      items,
+  const data = {
+    brandName: env.PRINTOTECA_BRAND_NAME,
+    external_id: String(payload?.id || payload?.name || ''),
+    comment: commentParts.join(', '),
+    currency: payload?.currency || payload?.presentment_currency || 'USD',
+    orderDate: toIsoString(payload?.created_at) || new Date().toISOString(),
+    shipping_address: shippingAddress,
+    shipping: {
+      shippingMethod: env.PRINTOTECA_DEFAULT_SHIPPING_METHOD,
     },
+    items,
+  };
+
+  console.log('Transformed:', data);
+
+  return {
+    data,
   };
 }
 
