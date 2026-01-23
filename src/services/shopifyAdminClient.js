@@ -1,9 +1,7 @@
-import axios from 'axios';
-import logger from './logger';
-import { EnvConfig } from './env';
-import { PrintotecaWebhookOrder } from '../types/printotecaWebhook';
+const axios = require('axios');
+const logger = require('./logger');
 
-function createClient(env: EnvConfig) {
+function createClient(env) {
   return axios.create({
     baseURL: `https://${env.SHOPIFY_STORE_DOMAIN}/admin/api/2025-07`,
     headers: {
@@ -13,11 +11,7 @@ function createClient(env: EnvConfig) {
   });
 }
 
-export async function savePrintotecaOrderIdMetafield(
-  orderId: number,
-  printotecaOrderId: string,
-  env: EnvConfig
-): Promise<void> {
+async function savePrintotecaOrderIdMetafield(orderId, printotecaOrderId, env) {
   const client = createClient(env);
   try {
     await client.post(`/orders/${orderId}/metafields.json`, {
@@ -29,7 +23,7 @@ export async function savePrintotecaOrderIdMetafield(
       },
     });
     logger.info(`Saved Printoteca order id metafield for Shopify order ${orderId}`);
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to save Printoteca order id metafield', {
       orderId,
       error: error?.response?.data || error?.message,
@@ -38,19 +32,14 @@ export async function savePrintotecaOrderIdMetafield(
   }
 }
 
-export async function getPrintotecaOrderIdMetafield(
-  orderId: number,
-  env: EnvConfig
-): Promise<string | undefined> {
+async function getPrintotecaOrderIdMetafield(orderId, env) {
   const client = createClient(env);
   try {
     const response = await client.get(`/orders/${orderId}/metafields.json`);
-    const metafields = response.data?.metafields as Array<{ namespace?: string; key?: string; value?: string }>;
-    const found = metafields?.find(
-      (mf) => mf.namespace === 'printoteca' && mf.key === 'order_id'
-    );
+    const metafields = response.data?.metafields || [];
+    const found = metafields.find((mf) => mf.namespace === 'printoteca' && mf.key === 'order_id');
     return found?.value;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to fetch Printoteca metafield from Shopify', {
       orderId,
       error: error?.response?.data || error?.message,
@@ -60,20 +49,15 @@ export async function getPrintotecaOrderIdMetafield(
   }
 }
 
-async function getFulfillmentOrderId(
-  orderId: number,
-  env: EnvConfig
-): Promise<number | undefined> {
+async function getFulfillmentOrderId(orderId, env) {
   const client = createClient(env);
   try {
     const response = await client.get(`/orders/${orderId}/fulfillment_orders.json`);
-    const fulfillmentOrders = response.data?.fulfillment_orders as Array<{ id: number; status?: string }>;
+    const fulfillmentOrders = response.data?.fulfillment_orders || [];
     const allowedStatuses = ['open', 'unfulfilled', 'scheduled'];
-    const found = fulfillmentOrders?.find((fo) =>
-      fo?.status ? allowedStatuses.includes(fo.status) : true
-    );
+    const found = fulfillmentOrders.find((fo) => (fo?.status ? allowedStatuses.includes(fo.status) : true));
     return found?.id;
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Failed to fetch fulfillment orders from Shopify', {
       orderId,
       error: error?.response?.data || error?.message,
@@ -83,15 +67,11 @@ async function getFulfillmentOrderId(
   }
 }
 
-export async function syncFulfillmentFromPrintotecaStatus(
-  orderId: number,
-  printotecaPayload: PrintotecaWebhookOrder,
-  env: EnvConfig
-): Promise<void> {
-  const trackingNumber = printotecaPayload.shipping?.trackingNumber;
+async function syncFulfillmentFromPrintotecaStatus(orderId, printotecaPayload, env) {
+  const trackingNumber = printotecaPayload?.shipping?.trackingNumber;
   if (!trackingNumber) {
     logger.info(
-      `Printoteca status update for order ${orderId}: ${printotecaPayload.status || 'unknown'}, no tracking yet`
+      `Printoteca status update for order ${orderId}: ${printotecaPayload?.status || 'unknown'}, no tracking yet`
     );
     return;
   }
@@ -110,16 +90,14 @@ export async function syncFulfillmentFromPrintotecaStatus(
         tracking_info: {
           number: trackingNumber,
           company: 'Other',
-          url: printotecaPayload.shipping?.trackingUrl,
+          url: printotecaPayload?.shipping?.trackingUrl,
         },
         notify_customer: true,
       },
     });
 
-    logger.info(
-      `Created Shopify fulfillment for order ${orderId} with tracking ${trackingNumber}`
-    );
-  } catch (error: any) {
+    logger.info(`Created Shopify fulfillment for order ${orderId} with tracking ${trackingNumber}`);
+  } catch (error) {
     logger.error('Failed to create Shopify fulfillment', {
       orderId,
       trackingNumber,
@@ -128,3 +106,9 @@ export async function syncFulfillmentFromPrintotecaStatus(
     });
   }
 }
+
+module.exports = {
+  savePrintotecaOrderIdMetafield,
+  getPrintotecaOrderIdMetafield,
+  syncFulfillmentFromPrintotecaStatus,
+};

@@ -5,6 +5,8 @@
     "moduleResolution": "node",
     "rootDir": "src",
     "outDir": "dist",
+    "allowJs": true,
+    "checkJs": false,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
@@ -13,7 +15,8 @@
   },
   "include": [
     "src/**/*.ts",
-    "src/**/*.d.ts"
+    "src/**/*.d.ts",
+    "src/**/*.js"
   ],
   "exclude": [
     "node_modules",

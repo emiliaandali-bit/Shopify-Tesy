@@ -1,26 +1,11 @@
-import dotenv from 'dotenv';
-import logger from './logger';
+const dotenv = require('dotenv');
+const logger = require('./logger');
 
 dotenv.config();
 
-type ShippingMethod = 'regular' | 'recorded' | 'courier' | 'collection';
+const SHIPPING_METHODS = ['regular', 'recorded', 'courier', 'collection'];
 
-export interface EnvConfig {
-  PORT: number;
-  NODE_ENV: 'development' | 'production' | string;
-  SHOPIFY_WEBHOOK_SECRET: string;
-  SHOPIFY_STORE_DOMAIN: string;
-  SHOPIFY_ADMIN_ACCESS_TOKEN: string;
-  PRINTOTECA_APP_ID: string;
-  PRINTOTECA_SECRET_KEY: string;
-  PRINTOTECA_BRAND_NAME: string;
-  PRINTOTECA_BASE_URL: string;
-  PRINTOTECA_DEFAULT_SHIPPING_METHOD: ShippingMethod;
-  PRINTOTECA_ENABLE_SANDBOX: boolean;
-  PRINTO_TECA_WEBHOOK_SECRET?: string;
-}
-
-const requiredVars: Array<keyof EnvConfig> = [
+const requiredVars = [
   'SHOPIFY_WEBHOOK_SECRET',
   'SHOPIFY_STORE_DOMAIN',
   'SHOPIFY_ADMIN_ACCESS_TOKEN',
@@ -29,20 +14,19 @@ const requiredVars: Array<keyof EnvConfig> = [
   'PRINTOTECA_BRAND_NAME',
 ];
 
-function parseShippingMethod(value?: string): ShippingMethod {
-  const allowed: ShippingMethod[] = ['regular', 'recorded', 'courier', 'collection'];
-  if (value && allowed.includes(value as ShippingMethod)) {
-    return value as ShippingMethod;
+function parseShippingMethod(value) {
+  if (value && SHIPPING_METHODS.includes(value)) {
+    return value;
   }
   return 'courier';
 }
 
-function parseBoolean(value?: string): boolean {
+function parseBoolean(value) {
   if (!value) return false;
   return value.toLowerCase() === 'true';
 }
 
-function requireEnv(name: keyof EnvConfig, fallback?: string): string {
+function requireEnv(name, fallback) {
   const value = process.env[name] ?? fallback;
   if (!value) {
     logger.error(`Missing required environment variable: ${name}`);
@@ -51,10 +35,9 @@ function requireEnv(name: keyof EnvConfig, fallback?: string): string {
   return value;
 }
 
-export function loadEnv(): EnvConfig {
+function loadEnv() {
   const fallbackShipping = process.env.DEFAULT_SHIPPING_METHOD;
-  const shippingMethodEnv =
-    process.env.PRINTOTECA_DEFAULT_SHIPPING_METHOD || fallbackShipping;
+  const shippingMethodEnv = process.env.PRINTOTECA_DEFAULT_SHIPPING_METHOD || fallbackShipping;
   if (fallbackShipping && !process.env.PRINTOTECA_DEFAULT_SHIPPING_METHOD) {
     logger.info(
       'Using DEFAULT_SHIPPING_METHOD for compatibility; consider renaming to PRINTOTECA_DEFAULT_SHIPPING_METHOD.'
@@ -68,9 +51,9 @@ export function loadEnv(): EnvConfig {
     );
   }
 
-  const config: EnvConfig = {
+  const config = {
     PORT: parseInt(process.env.PORT || '8080', 10),
-    NODE_ENV: (process.env.NODE_ENV as EnvConfig['NODE_ENV']) || 'development',
+    NODE_ENV: process.env.NODE_ENV || 'development',
     SHOPIFY_WEBHOOK_SECRET: requireEnv('SHOPIFY_WEBHOOK_SECRET'),
     SHOPIFY_STORE_DOMAIN: requireEnv('SHOPIFY_STORE_DOMAIN'),
     SHOPIFY_ADMIN_ACCESS_TOKEN: requireEnv('SHOPIFY_ADMIN_ACCESS_TOKEN'),
@@ -92,4 +75,7 @@ export function loadEnv(): EnvConfig {
   return config;
 }
 
-export type { ShippingMethod };
+module.exports = {
+  loadEnv,
+  SHIPPING_METHODS,
+};
