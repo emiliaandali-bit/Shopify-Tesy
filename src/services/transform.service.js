@@ -295,21 +295,20 @@ function parseShipping(payload) {
 
 function parseItems(payload) {
   const items = (payload?.lineItems || []).map((lineItem) => {
-    const props = toPropertiesMap(lineItem?.properties || []);
+    const { designs, mockups } = extractDesigns(lineItem?.properties);
     const item = {
       pn: lineItem?.sku ?? '',
       title: lineItem?.title ?? '',
       quantity: Number(lineItem?.quantity ?? 0),
       retailPrice: formatMoney(lineItem?.price),
       description: lineItem?.name ?? lineItem?.title ?? '',
-      designs: {
-        front: props._tib_design_link_1 ?? null,
-        back: props._tib_design_link_2 ?? null,
-      },
-      mockups: {
-        front: props._customization_image ?? null,
-      },
     };
+    if (designs) {
+      item.designs = designs;
+    }
+    if (mockups) {
+      item.mockups = mockups;
+    }
     return pruneNulls(item);
   });
   return { items };
