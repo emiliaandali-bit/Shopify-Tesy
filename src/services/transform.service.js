@@ -258,22 +258,27 @@ function toPropertiesMap(properties = []) {
 }
 
 function parseOrderProperties(payload) {
+  const rawOrder = payload?.raw || {};
+  const orderName = rawOrder?.name || rawOrder?.id || payload?.shopifyOrderId || '';
+  const comment = rawOrder?.note || `Shopify order ${orderName}`;
   return {
     id: String(payload?.shopifyOrderId || ''),
     external_id: String(payload?.shopifyOrderId || ''),
     type: 'order',
     created_at: payload?.createdAt || '',
     brand: 'Hugs & Mugs',
+    brandName: 'Hugs & Mugs',
+    comment,
   };
 }
 
 function parseShipping(payload) {
   const shipping = payload?.shippingAddress || {};
-  const result = {
+  return {
     shipping_address: {
       firstName: shipping?.first_name || '',
       lastName: shipping?.last_name || '',
-      company: shipping?.company ?? null,
+      company: shipping?.company ?? '',
       address1: shipping?.address1 ?? '',
       address2: shipping?.address2 ?? '',
       city: shipping?.city ?? '',
@@ -286,7 +291,6 @@ function parseShipping(payload) {
       shippingMethod: 'regular',
     },
   };
-  return pruneNulls(result);
 }
 
 function parseItems(payload) {
@@ -322,6 +326,8 @@ function buildPrintotecaOrderFromShopify(payload) {
     type: order.type,
     created_at: order.created_at,
     brand: order.brand,
+    brandName: order.brandName,
+    comment: order.comment,
     shipping_address: shipping.shipping_address,
     shipping: shipping.shipping,
     items: items.items,

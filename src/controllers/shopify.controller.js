@@ -123,7 +123,10 @@ async function handleOrdersPaid(req, res) {
       }
 
       const transformed = buildPrintotecaOrderFromShopify(normalized);
-      const requestMeta = printotecaService.buildCreateRequest(transformed, req.app.locals.env);
+      const requestMeta = printotecaService.buildCreateRequest(
+        JSON.stringify(transformed),
+        req.app.locals.env
+      );
       const designUrls = collectDesignUrls(transformed);
 
       logBox('SHOPIFY_WEBHOOK_RECEIVED', [

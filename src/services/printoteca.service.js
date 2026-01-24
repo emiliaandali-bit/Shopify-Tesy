@@ -23,8 +23,7 @@ function maskSignature(url) {
   return url.replace(/Signature=[^&]+/i, 'Signature=***');
 }
 
-function buildCreateRequest(payload, env) {
-  const bodyString = JSON.stringify(payload);
+function buildCreateRequest(bodyString, env) {
   const signature = buildSignature(bodyString, env.PRINTOTECA_SECRET_KEY);
   const url = `${buildBaseUrl(env)}/orders.php?AppId=${encodeURIComponent(
     env.PRINTOTECA_APP_ID
@@ -35,6 +34,21 @@ function buildCreateRequest(payload, env) {
     urlMasked: maskSignature(url),
     bodyLength: bodyString.length,
     bodySha1: buildBodySha1(bodyString),
+  };
+}
+
+function summarizePayload(payload) {
+  const items = payload?.items || [];
+  return {
+    external_id: payload?.external_id,
+    itemCount: items.length,
+    keys: Object.keys(payload || {}),
+    items: items.map((item) => ({
+      pn: item?.pn,
+      title: item?.title,
+      hasDesignFront: Boolean(item?.designs?.front),
+      hasMockupFront: Boolean(item?.mockups?.front),
+    })),
   };
 }
 
@@ -63,31 +77,53 @@ async function listOrders(env, page = 1, limit = 250) {
 }
 
 async function createOrder(payload, env) {
-  const request = buildCreateRequest(payload, env);
+  const summary = summarizePayload(payload);
+  logger.info('Printoteca payload summary', summary);
 
-  logger.info('Sending order to Printoteca', { url: request.urlMasked });
+  const bodyA = JSON.stringify(payload);
+  const requestA = buildCreateRequest(bodyA, env);
 
   if (env.PRINTOTECA_ENABLE_SANDBOX) {
-    logger.info('Sandbox mode enabled - skipping Printoteca API call', { url: request.urlMasked });
+    logger.info('Sandbox mode enabled - skipping Printoteca API call', { url: requestA.urlMasked });
     return { sandbox: true, success: true };
   }
 
+  const previewA = bodyA.slice(0, 400);
+  logger.info('Printoteca payload preview', { preview: previewA });
+
   try {
-    const response = await axios.post(request.url, request.bodyString, {
+    const response = await axios.post(requestA.url, requestA.bodyString, {
       headers: { 'Content-Type': 'application/json' },
       timeout: 10000,
       transformRequest: [(data) => data],
     });
     return response.data;
   } catch (error) {
+    const responseData = error?.response?.data;
+    const errorText = typeof responseData?.error === 'string' ? responseData.error.toLowerCase() : '';
     logger.error('PRINTOTECA_ERROR', {
       status: error?.response?.status,
-      urlMasked: request.urlMasked,
-      bodyLength: request.bodyLength,
-      bodySha1: request.bodySha1,
-      responseData: error?.response?.data,
+      urlMasked: requestA.urlMasked,
+      bodyLength: requestA.bodyLength,
+      bodySha1: requestA.bodySha1,
+      responseData,
       responseHeaders: error?.response?.headers,
     });
+
+    if (error?.response?.status === 400 && errorText.includes('name is not defined')) {
+      logger.warn('Printoteca schema mismatch; retrying with wrapped payload');
+      const bodyB = JSON.stringify({ order: payload });
+      const requestB = buildCreateRequest(bodyB, env);
+      const previewB = bodyB.slice(0, 400);
+      logger.info('Printoteca payload preview', { preview: previewB });
+      const retryResponse = await axios.post(requestB.url, requestB.bodyString, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000,
+        transformRequest: [(data) => data],
+      });
+      return retryResponse.data;
+    }
+
     throw error;
   }
 }
