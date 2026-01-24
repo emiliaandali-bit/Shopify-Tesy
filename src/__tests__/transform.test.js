@@ -1,9 +1,11 @@
-const { transformDraftOrderToPrintoteca } = require('../services/transform.service');
+const { buildPrintotecaOrderFromShopify } = require('../services/transform.service');
 
 describe('transformDraftOrderToPrintoteca', () => {
   it('maps draft order payload to Printoteca payload', () => {
     const payload = {
       draft_order: {
+        id: 12345,
+        created_at: '2024-05-01T12:00:00Z',
         shipping_address: {
           first_name: 'Jane',
           last_name: 'Doe',
@@ -19,6 +21,7 @@ describe('transformDraftOrderToPrintoteca', () => {
         line_items: [
           {
             sku: 'SKU-1',
+            title: 'Item One',
             quantity: 1,
             price: '10.50',
             name: 'Item One',
@@ -29,6 +32,7 @@ describe('transformDraftOrderToPrintoteca', () => {
           },
           {
             sku: 'SKU-2',
+            title: 'Item Two',
             quantity: 2,
             price: '12.00',
             name: 'Item Two',
@@ -52,15 +56,17 @@ describe('transformDraftOrderToPrintoteca', () => {
       },
     };
 
-    const result = transformDraftOrderToPrintoteca(payload);
+    const result = buildPrintotecaOrderFromShopify(payload);
 
-    expect(result.brandName).toBe('Hugs & Mugs');
+    expect(result.brand).toBe('Hugs & Mugs');
     expect(result.shipping.shippingMethod).toBe('regular');
     expect(result.items).toHaveLength(3);
     expect(result.items[0].pn).toBe('SKU-1');
+    expect(result.items[0].title).toBe('Item One');
     expect(result.items[0].designs.front).toBe('https://example.com/front1.png');
     expect(result.items[0].mockups.front).toBe('https://example.com/mock1.png');
     expect(result.items[1].pn).toBe('SKU-2');
+    expect(result.items[1].title).toBe('Item Two');
     expect(result.items[1].designs.front).toBe('https://example.com/front2.png');
     expect(result.items[1].mockups.front).toBe('https://example.com/mock2.png');
   });

@@ -1,7 +1,8 @@
 const logger = require('../services/logger');
 const { processDraftOrder, processCancelledOrder } = require('../services/shopify.service');
-const { transformDraftOrderToPrintoteca } = require('../services/transform.service');
+const { buildPrintotecaOrderFromShopify } = require('../services/transform.service');
 const printotecaService = require('../services/printoteca.service');
+const { logBox, logJson } = require('../utils/prettyLog');
 
 async function handleDraftOrder(req, res) {
   const payload = req.body;
@@ -22,7 +23,7 @@ function handleTransformPreview(req, res) {
     return res.status(400).json({ error: 'Invalid JSON payload' });
   }
   try {
-    const transformed = transformDraftOrderToPrintoteca(payload);
+    const transformed = buildPrintotecaOrderFromShopify(payload);
     return res.json(transformed);
   } catch (error) {
     logger.error('Failed to transform preview payload', { error: error?.message });
@@ -45,13 +46,24 @@ async function handleOrdersPaid(req, res) {
       return res.status(400).json({ error: 'Missing draft_order line_items' });
     }
 
-    const transformed = transformDraftOrderToPrintoteca(payload);
-    console.log(JSON.stringify(transformed, null, 2));
+    const transformed = buildPrintotecaOrderFromShopify(payload);
+    const requestMeta = printotecaService.buildCreateRequest(transformed, req.app.locals.env);
+
+    logBox('SHOPIFY_WEBHOOK_RECEIVED', [
+      `draft_order_id: ${draftOrder?.id || ''}`,
+      `line_items: ${draftOrder?.line_items?.length || 0}`,
+    ]);
+    logJson('PRINTOTECA_TRANSFORMED', transformed);
+    logBox('PRINTOTECA_REQUEST', [
+      `url: ${requestMeta.urlMasked}`,
+      `bodyLength: ${requestMeta.bodyLength}`,
+      `bodySha1: ${requestMeta.bodySha1}`,
+    ]);
 
     void printotecaService
       .createOrder(transformed, req.app.locals.env)
       .then((response) => {
-        logger.info('Printoteca order created', { response });
+        logJson('PRINTOTECA_RESPONSE', response);
       })
       .catch((error) => {
         logger.error('Printoteca create order failed', { error: error?.message });

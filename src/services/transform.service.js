@@ -219,11 +219,18 @@ function transformPaidOrderToWarehouse(payload, env) {
 }
 
 function normalizePhone(phone) {
-  if (!phone) return null;
+  if (!phone) return '';
   const value = String(phone).trim();
-  if (!value) return null;
+  if (!value) return '';
   const normalized = value.replace(/^\++/, '');
   return `+${normalized}`;
+}
+
+function formatMoney(value) {
+  if (value === null || value === undefined || value === '') return '0.00';
+  const numberValue = Number(value);
+  if (Number.isNaN(numberValue)) return '0.00';
+  return numberValue.toFixed(2);
 }
 
 function toPropertiesMap(properties = []) {
@@ -234,33 +241,47 @@ function toPropertiesMap(properties = []) {
   );
 }
 
-function transformDraftOrderToPrintoteca(payload) {
-  const draftOrder = payload?.draft_order;
-  if (!draftOrder) {
-    throw new Error('Missing draft_order payload.');
-  }
-
-  const shippingSource = draftOrder?.shipping_address || {};
-  const shippingAddress = {
-    firstName: shippingSource?.first_name || '',
-    lastName: shippingSource?.last_name || '',
-    company: shippingSource?.company ?? null,
-    address1: shippingSource?.address1 || '',
-    address2: shippingSource?.address2 ?? null,
-    city: shippingSource?.city || '',
-    county: shippingSource?.province || '',
-    postcode: shippingSource?.zip || '',
-    country: shippingSource?.country || '',
-    phone1: normalizePhone(shippingSource?.phone),
+function parseOrderProperties(payload) {
+  const draftOrder = payload?.draft_order || {};
+  return {
+    id: String(draftOrder?.id || ''),
+    external_id: String(draftOrder?.id || ''),
+    type: 'order',
+    created_at: draftOrder?.created_at || '',
+    brand: 'Hugs & Mugs',
   };
+}
 
-  const items = (draftOrder?.line_items || []).map((lineItem) => {
+function parseShipping(payload) {
+  const shipping = payload?.draft_order?.shipping_address || {};
+  return {
+    shipping_address: {
+      firstName: shipping?.first_name || '',
+      lastName: shipping?.last_name || '',
+      company: shipping?.company ?? null,
+      address1: shipping?.address1 ?? '',
+      address2: shipping?.address2 ?? '',
+      city: shipping?.city ?? '',
+      county: shipping?.province ?? '',
+      postcode: shipping?.zip ?? '',
+      country: shipping?.country ?? '',
+      phone1: normalizePhone(shipping?.phone ?? ''),
+    },
+    shipping: {
+      shippingMethod: 'regular',
+    },
+  };
+}
+
+function parseItems(payload) {
+  const items = (payload?.draft_order?.line_items || []).map((lineItem) => {
     const props = toPropertiesMap(lineItem?.properties || []);
     return {
-      pn: lineItem?.sku || '',
-      quantity: Number(lineItem?.quantity || 0),
-      retailPrice: Number(lineItem?.price || 0),
-      description: lineItem?.name || lineItem?.title || '',
+      pn: lineItem?.sku ?? '',
+      title: lineItem?.title ?? '',
+      quantity: Number(lineItem?.quantity ?? 0),
+      retailPrice: formatMoney(lineItem?.price),
+      description: lineItem?.name ?? lineItem?.title ?? '',
       designs: {
         front: props._tib_design_link_1 ?? null,
         back: props._tib_design_link_2 ?? null,
@@ -270,19 +291,32 @@ function transformDraftOrderToPrintoteca(payload) {
       },
     };
   });
+  return { items };
+}
+
+function buildPrintotecaOrderFromShopify(payload) {
+  const order = parseOrderProperties(payload);
+  const shipping = parseShipping(payload);
+  const items = parseItems(payload);
 
   return {
-    brandName: 'Hugs & Mugs',
-    shipping_address: shippingAddress,
-    shipping: {
-      shippingMethod: 'regular',
-    },
-    items,
+    id: order.id,
+    external_id: order.external_id,
+    type: order.type,
+    created_at: order.created_at,
+    brand: order.brand,
+    shipping_address: shipping.shipping_address,
+    shipping: shipping.shipping,
+    items: items.items,
   };
 }
 
 module.exports = {
   transformDraftOrderToWarehouse,
   transformPaidOrderToWarehouse,
-  transformDraftOrderToPrintoteca,
+  buildPrintotecaOrderFromShopify,
+  parseOrderProperties,
+  parseShipping,
+  parseItems,
+  formatMoney,
 };

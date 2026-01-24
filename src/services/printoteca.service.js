@@ -6,6 +6,10 @@ function buildSignature(payload, secret) {
   return crypto.createHash('sha1').update(payload + secret, 'utf8').digest('hex');
 }
 
+function buildBodySha1(payload) {
+  return crypto.createHash('sha1').update(payload, 'utf8').digest('hex');
+}
+
 function buildBaseUrl(env) {
   return `${env.PRINTOTECA_BASE_URL}`;
 }
@@ -15,25 +19,53 @@ function buildSignedUrl(path, query, env) {
   return `${buildBaseUrl(env)}${path}?${query}&Signature=${encodeURIComponent(signature)}`;
 }
 
-async function createOrder(payload, env) {
+function maskSignature(url) {
+  return url.replace(/Signature=[^&]+/i, 'Signature=***');
+}
+
+function buildCreateRequest(payload, env) {
   const bodyString = JSON.stringify(payload);
   const signature = buildSignature(bodyString, env.PRINTOTECA_SECRET_KEY);
   const url = `${buildBaseUrl(env)}/orders.php?AppId=${encodeURIComponent(
     env.PRINTOTECA_APP_ID
   )}&Signature=${encodeURIComponent(signature)}`;
+  return {
+    bodyString,
+    url,
+    urlMasked: maskSignature(url),
+    bodyLength: bodyString.length,
+    bodySha1: buildBodySha1(bodyString),
+  };
+}
 
-  logger.info('Sending order to Printoteca', { url });
+async function createOrder(payload, env) {
+  const request = buildCreateRequest(payload, env);
+
+  logger.info('Sending order to Printoteca', { url: request.urlMasked });
 
   if (env.PRINTOTECA_ENABLE_SANDBOX) {
-    logger.info('Sandbox mode enabled - skipping Printoteca API call', { url });
+    logger.info('Sandbox mode enabled - skipping Printoteca API call', { url: request.urlMasked });
     return { sandbox: true, success: true };
   }
 
-  const response = await axios.post(url, bodyString, {
-    headers: { 'Content-Type': 'application/json' },
-    timeout: 10000,
-  });
-  return response.data;
+  try {
+    const response = await axios.post(request.url, request.bodyString, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 10000,
+      transformRequest: [(data) => data],
+    });
+    return response.data;
+  } catch (error) {
+    logger.error('PRINTOTECA_ERROR', {
+      status: error?.response?.status,
+      urlMasked: request.urlMasked,
+      bodyLength: request.bodyLength,
+      bodySha1: request.bodySha1,
+      responseData: error?.response?.data,
+      responseHeaders: error?.response?.headers,
+    });
+    throw error;
+  }
 }
 
 async function getOrderStatus(orderId, env) {
@@ -64,4 +96,5 @@ module.exports = {
   createOrder,
   getOrderStatus,
   cancelOrder,
+  buildCreateRequest,
 };
