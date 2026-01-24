@@ -1,6 +1,7 @@
 const logger = require('../services/logger');
 const TransactionLog = require('../models/TransactionLog');
 const { sendTrackingFulfillment } = require('../services/shopifyAdminClient');
+const { normalizePrintotecaWebhook } = require('../utils/printotecaWebhook.util');
 const {
   upsertOrderMetafield,
   addRemoveOrderTags,
@@ -8,12 +9,24 @@ const {
 } = require('../services/shopifyStatus.service');
 
 async function handleOrderShipped(req, res) {
-  const payload = req.body;
   try {
-    const shopifyOrderId = Number(payload?.external_id);
-    if (!shopifyOrderId) {
-      logger.warn('Printoteca orders/shipped missing external_id');
-      return res.status(400).json({ error: 'Missing external_id' });
+    const parsed = normalizePrintotecaWebhook(req.body);
+    if (!parsed.externalId) {
+      logger.warn('Printoteca orders/shipped missing external_id', {
+        bodyKeys: Object.keys(parsed.raw || {}),
+        orderKeys: Object.keys(parsed.order || {}),
+        printotecaId: parsed.printotecaId,
+      });
+      return res.status(200).send('OK');
+    }
+
+    const shopifyOrderId = Number(parsed.externalId);
+    if (!Number.isFinite(shopifyOrderId)) {
+      logger.warn('Printoteca orders/shipped external_id not numeric', {
+        externalId: parsed.externalId,
+        printotecaId: parsed.printotecaId,
+      });
+      return res.status(200).send('OK');
     }
 
     const existingFulfillmentId = await getOrderMetafield(
@@ -30,7 +43,7 @@ async function handleOrderShipped(req, res) {
       return res.json({ status: 'ok', skipped: true });
     }
 
-    const printotecaOrderId = payload?.id || payload?.printoteca_order_id;
+    const printotecaOrderId = parsed.printotecaId;
     if (printotecaOrderId) {
       const logEntry = await TransactionLog.findByWarehouseOrderId(printotecaOrderId);
       if (!logEntry) {
@@ -39,9 +52,9 @@ async function handleOrderShipped(req, res) {
     }
 
     const trackingPayload = {
-      tracking_number: payload?.tracking_number || payload?.trackingNumber,
-      tracking_url: payload?.tracking_url || payload?.trackingUrl,
-      tracking_company: payload?.tracking_company || payload?.trackingCompany || 'Other',
+      tracking_number: parsed.shipping?.trackingNumber || parsed.shipping?.tracking_number,
+      tracking_url: parsed.shipping?.trackingUrl || parsed.shipping?.tracking_url,
+      tracking_company: parsed.shipping?.trackingCompany || parsed.shipping?.tracking_company || 'Other',
     };
 
     const trackingNumber = trackingPayload.tracking_number;
