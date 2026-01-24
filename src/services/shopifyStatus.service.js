@@ -77,8 +77,20 @@ async function addRemoveOrderTags(orderId, addTags, removeTags, env) {
   }
 }
 
+async function setShopifyPrintotecaStatusSent(orderId, printotecaId, env) {
+  await upsertOrderMetafield(orderId, 'printoteca', 'order_id', String(printotecaId), env);
+  await upsertOrderMetafield(orderId, 'printoteca', 'status', 'sent', env);
+  await addRemoveOrderTags(
+    orderId,
+    ['printoteca:sent'],
+    ['printoteca:failed', 'printoteca:pending'],
+    env
+  );
+}
+
 module.exports = {
   upsertOrderMetafield,
   getOrderMetafield,
   addRemoveOrderTags,
+  setShopifyPrintotecaStatusSent,
 };

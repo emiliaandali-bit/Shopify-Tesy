@@ -10,6 +10,7 @@ const {
   upsertOrderMetafield,
   addRemoveOrderTags,
   getOrderMetafield,
+  setShopifyPrintotecaStatusSent,
 } = require('../services/shopifyStatus.service');
 const { logBox, logJson } = require('../utils/prettyLog');
 
@@ -129,7 +130,7 @@ async function handleOrdersPaid(req, res) {
       try {
         const response = await printotecaService.createOrder(transformed, req.app.locals.env);
         logJson('PRINTOTECA_RESPONSE', response);
-        const printotecaId = response?.id;
+        const printotecaId = printotecaService.extractPrintotecaId(response);
         if (printotecaId) {
           await savePrintotecaOrderIdMetafield(shopifyOrderId, String(printotecaId), req.app.locals.env);
           await savePrintotecaExternalIdMetafield(
@@ -137,7 +138,7 @@ async function handleOrdersPaid(req, res) {
             String(shopifyOrderId),
             req.app.locals.env
           );
-          await upsertOrderMetafield(shopifyOrderId, 'printoteca', 'status', 'sent', req.app.locals.env);
+          await setShopifyPrintotecaStatusSent(shopifyOrderId, String(printotecaId), req.app.locals.env);
           await upsertOrderMetafield(
             shopifyOrderId,
             'printoteca',
@@ -146,12 +147,23 @@ async function handleOrdersPaid(req, res) {
             req.app.locals.env
           );
           await upsertOrderMetafield(shopifyOrderId, 'printoteca', 'last_error', '', req.app.locals.env);
-          await addRemoveOrderTags(
+        } else {
+          const errorMessage = 'Printoteca response missing order id';
+          await upsertOrderMetafield(shopifyOrderId, 'printoteca', 'status', 'failed', req.app.locals.env);
+          await upsertOrderMetafield(
             shopifyOrderId,
-            ['printoteca:sent'],
-            ['printoteca:pending', 'printoteca:failed'],
+            'printoteca',
+            'last_error',
+            errorMessage,
             req.app.locals.env
           );
+          await addRemoveOrderTags(
+            shopifyOrderId,
+            ['printoteca:failed'],
+            ['printoteca:pending'],
+            req.app.locals.env
+          );
+          logger.error(errorMessage, { response });
         }
       } catch (error) {
         const errorMessage = error?.message || 'Printoteca create failed';

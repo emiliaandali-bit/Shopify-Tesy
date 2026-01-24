@@ -38,6 +38,30 @@ function buildCreateRequest(payload, env) {
   };
 }
 
+function extractPrintotecaId(responseData) {
+  return responseData?.order?.id || responseData?.id || null;
+}
+
+async function listOrders(env, page = 1, limit = 250) {
+  const query = `AppId=${encodeURIComponent(env.PRINTOTECA_APP_ID)}&page=${encodeURIComponent(
+    page
+  )}&limit=${encodeURIComponent(limit)}`;
+  const url = buildSignedUrl('/orders.php', query, env);
+  const urlMasked = maskSignature(url);
+  try {
+    const response = await axios.get(url, { timeout: 10000 });
+    return response.data;
+  } catch (error) {
+    logger.error('PRINTOTECA_ERROR', {
+      status: error?.response?.status,
+      urlMasked,
+      responseData: error?.response?.data,
+      responseHeaders: error?.response?.headers,
+    });
+    throw error;
+  }
+}
+
 async function createOrder(payload, env) {
   const request = buildCreateRequest(payload, env);
 
@@ -119,4 +143,6 @@ module.exports = {
   getOrderStatus,
   cancelOrder,
   buildCreateRequest,
+  extractPrintotecaId,
+  listOrders,
 };

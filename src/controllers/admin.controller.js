@@ -10,7 +10,45 @@ const {
   upsertOrderMetafield,
   addRemoveOrderTags,
   getOrderMetafield,
+  setShopifyPrintotecaStatusSent,
 } = require('../services/shopifyStatus.service');
+
+async function reconcileOrder(shopifyOrderId, env) {
+  const existingPrintotecaId = await getOrderMetafield(
+    shopifyOrderId,
+    'printoteca',
+    'order_id',
+    env
+  );
+  if (existingPrintotecaId) {
+    await setShopifyPrintotecaStatusSent(shopifyOrderId, existingPrintotecaId, env);
+    return { found: true, printotecaId: existingPrintotecaId, action: 'updated' };
+  }
+
+  let page = 1;
+  const limit = 250;
+  while (page <= 10) {
+    const response = await printotecaService.listOrders(env, page, limit);
+    const orders = response?.orders || response?.data?.orders || response?.results || [];
+    if (!Array.isArray(orders) || orders.length === 0) {
+      break;
+    }
+    const match = orders.find((order) => String(order?.external_id) === String(shopifyOrderId));
+    if (match) {
+      const printotecaId = match?.id || match?.order_id;
+      if (printotecaId) {
+        await setShopifyPrintotecaStatusSent(shopifyOrderId, printotecaId, env);
+        return { found: true, printotecaId, action: 'updated' };
+      }
+    }
+    if (orders.length < limit) {
+      break;
+    }
+    page += 1;
+  }
+
+  return { found: false, action: 'not_found' };
+}
 
 async function resendOrder(req, res) {
   const shopifyOrderId = Number(req.params.shopifyOrderId);
@@ -21,19 +59,13 @@ async function resendOrder(req, res) {
   const force = String(req.query.force || 'false').toLowerCase() === 'true';
 
   try {
-    const existingPrintotecaId = await getOrderMetafield(
-      shopifyOrderId,
-      'printoteca',
-      'order_id',
-      req.app.locals.env
-    );
-
-    if (existingPrintotecaId && !force) {
+    const reconciliation = await reconcileOrder(shopifyOrderId, req.app.locals.env);
+    if (reconciliation.found && !force) {
       return res.json({
         shopifyOrderId,
-        action: 'skipped',
+        action: 'relinked',
         status: 'sent',
-        printotecaOrderId: existingPrintotecaId,
+        printotecaOrderId: reconciliation.printotecaId,
       });
     }
 
@@ -68,7 +100,7 @@ async function resendOrder(req, res) {
 
     const transformed = buildPrintotecaOrderFromShopify(normalized);
     const response = await printotecaService.createOrder(transformed, req.app.locals.env);
-    const printotecaId = response?.id;
+    const printotecaId = printotecaService.extractPrintotecaId(response);
 
     if (printotecaId) {
       await savePrintotecaOrderIdMetafield(shopifyOrderId, String(printotecaId), req.app.locals.env);
@@ -77,7 +109,7 @@ async function resendOrder(req, res) {
         String(shopifyOrderId),
         req.app.locals.env
       );
-      await upsertOrderMetafield(shopifyOrderId, 'printoteca', 'status', 'sent', req.app.locals.env);
+      await setShopifyPrintotecaStatusSent(shopifyOrderId, String(printotecaId), req.app.locals.env);
       await upsertOrderMetafield(
         shopifyOrderId,
         'printoteca',
@@ -128,4 +160,5 @@ async function resendOrder(req, res) {
 
 module.exports = {
   resendOrder,
+  reconcileOrder,
 };
