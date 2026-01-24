@@ -257,6 +257,20 @@ function toPropertiesMap(properties = []) {
   );
 }
 
+function normalizeProperties(input) {
+  if (Array.isArray(input)) {
+    return Object.fromEntries(
+      input
+        .filter((prop) => prop && (prop.name || prop.key))
+        .map((prop) => [prop.name || prop.key, prop.value])
+    );
+  }
+  if (input && typeof input === 'object') {
+    return input;
+  }
+  return {};
+}
+
 function parseOrderProperties(payload) {
   const rawOrder = payload?.raw || {};
   const orderName = rawOrder?.name || rawOrder?.id || payload?.shopifyOrderId || '';
@@ -295,20 +309,24 @@ function parseShipping(payload) {
 
 function parseItems(payload) {
   const items = (payload?.lineItems || []).map((lineItem) => {
-    const { designs, mockups } = extractDesigns(lineItem?.properties);
+    const props = normalizeProperties(lineItem?.properties);
+    const designFront = props._tib_design_link_1 || null;
+    const designBack = props._tib_design_link_2 || null;
+    const mockupFront = props._customization_image || null;
     const item = {
       pn: lineItem?.sku ?? '',
       title: lineItem?.title ?? '',
       quantity: Number(lineItem?.quantity ?? 0),
       retailPrice: formatMoney(lineItem?.price),
       description: lineItem?.name ?? lineItem?.title ?? '',
+      designs: {
+        front: designFront,
+        back: designBack,
+      },
+      mockups: {
+        front: mockupFront,
+      },
     };
-    if (designs) {
-      item.designs = designs;
-    }
-    if (mockups) {
-      item.mockups = mockups;
-    }
     return pruneNulls(item);
   });
   return { items };
@@ -342,4 +360,5 @@ module.exports = {
   parseItems,
   formatMoney,
   pruneNulls,
+  normalizeProperties,
 };

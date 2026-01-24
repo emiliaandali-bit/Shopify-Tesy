@@ -77,6 +77,21 @@ async function resendOrder(req, res) {
         logger.warn('Shopify order not found for resend', { shopifyOrderId });
         return;
       }
+      logger.info(
+        'Fetched Shopify order for resend',
+        JSON.stringify(
+          {
+            orderId: order.id,
+            lineItemCount: order.line_items?.length || 0,
+            hasPropertiesArray: Array.isArray(order.line_items?.[0]?.properties),
+            samplePropertyNames: (order.line_items?.[0]?.properties || [])
+              .slice(0, 5)
+              .map((prop) => prop.name),
+          },
+          null,
+          2
+        )
+      );
 
       const normalized = {
         shopifyOrderId: order.id,
@@ -86,6 +101,30 @@ async function resendOrder(req, res) {
         tags: order.tags || '',
         raw: order,
       };
+
+      logger.info(
+        'Shopify line_items diagnostics',
+        JSON.stringify(
+          {
+            orderId: order.id,
+            items: (order.line_items || []).map((lineItem) => ({
+              id: lineItem.id,
+              sku: lineItem.sku,
+              title: lineItem.title,
+              name: lineItem.name,
+              propertiesCount: Array.isArray(lineItem.properties) ? lineItem.properties.length : 0,
+              properties: Array.isArray(lineItem.properties)
+                ? lineItem.properties.map((prop) => ({
+                    name: prop.name,
+                    value: prop.value,
+                  }))
+                : lineItem.properties,
+            })),
+          },
+          null,
+          2
+        )
+      );
 
       await addRemoveOrderTags(
         shopifyOrderId,
@@ -103,6 +142,64 @@ async function resendOrder(req, res) {
       );
 
       const transformed = buildPrintotecaOrderFromShopify(normalized);
+      logger.info(
+        'Printoteca items summary',
+        JSON.stringify(
+          transformed.items.map((item) => ({
+            pn: item.pn,
+            title: item.title,
+            designFront: item.designs?.front,
+            designBack: item.designs?.back,
+            mockupFront: item.mockups?.front,
+          })),
+          null,
+          2
+        )
+      );
+      logger.info(
+        'Printoteca items (final)',
+        JSON.stringify(JSON.parse(JSON.stringify(transformed.items)), null, 2)
+      );
+
+      const missingDesignItems = (transformed?.items || []).filter(
+        (item) => !item?.designs?.front
+      );
+      if (missingDesignItems.length > 0) {
+        const missingMessage = missingDesignItems
+          .map((item) => `Missing design link _tib_design_link_1 for sku=${item.pn || 'unknown'}`)
+          .join('; ');
+        logger.error(
+          'Missing design links for Printoteca items',
+          JSON.stringify(
+            {
+              items: missingDesignItems.map((item) => ({ pn: item.pn, title: item.title })),
+            },
+            null,
+            2
+          )
+        );
+        await upsertOrderMetafield(
+          shopifyOrderId,
+          'printoteca',
+          'status',
+          'failed',
+          req.app.locals.env
+        );
+        await upsertOrderMetafield(
+          shopifyOrderId,
+          'printoteca',
+          'last_error',
+          missingMessage,
+          req.app.locals.env
+        );
+        await addRemoveOrderTags(
+          shopifyOrderId,
+          ['printoteca:failed'],
+          ['printoteca:pending'],
+          req.app.locals.env
+        );
+        return;
+      }
       const designUrls = Array.from(
         new Set(
           (transformed?.items || [])

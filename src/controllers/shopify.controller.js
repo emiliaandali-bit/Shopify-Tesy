@@ -89,6 +89,30 @@ async function handleOrdersPaid(req, res) {
         return;
       }
 
+      logger.info(
+        'Shopify line_items diagnostics',
+        JSON.stringify(
+          {
+            orderId: normalized.raw?.id,
+            items: (normalized.raw?.line_items || []).map((lineItem) => ({
+              id: lineItem.id,
+              sku: lineItem.sku,
+              title: lineItem.title,
+              name: lineItem.name,
+              propertiesCount: Array.isArray(lineItem.properties) ? lineItem.properties.length : 0,
+              properties: Array.isArray(lineItem.properties)
+                ? lineItem.properties.map((prop) => ({
+                    name: prop.name,
+                    value: prop.value,
+                  }))
+                : lineItem.properties,
+            })),
+          },
+          null,
+          2
+        )
+      );
+
       await addRemoveOrderTags(
         shopifyOrderId,
         ['printoteca:pending'],
@@ -127,6 +151,58 @@ async function handleOrdersPaid(req, res) {
         JSON.stringify(transformed),
         req.app.locals.env
       );
+      logger.info(
+        'Printoteca items summary',
+        JSON.stringify(
+          transformed.items.map((item) => ({
+            pn: item.pn,
+            title: item.title,
+            designFront: item.designs?.front,
+            designBack: item.designs?.back,
+            mockupFront: item.mockups?.front,
+          })),
+          null,
+          2
+        )
+      );
+      logger.info(
+        'Printoteca items (final)',
+        JSON.stringify(JSON.parse(JSON.stringify(transformed.items)), null, 2)
+      );
+
+      const missingDesignItems = (transformed?.items || []).filter(
+        (item) => !item?.designs?.front
+      );
+      if (missingDesignItems.length > 0) {
+        const missingMessage = missingDesignItems
+          .map((item) => `Missing design link _tib_design_link_1 for sku=${item.pn || 'unknown'}`)
+          .join('; ');
+        logger.error(
+          'Missing design links for Printoteca items',
+          JSON.stringify(
+            {
+              items: missingDesignItems.map((item) => ({ pn: item.pn, title: item.title })),
+            },
+            null,
+            2
+          )
+        );
+        await upsertOrderMetafield(shopifyOrderId, 'printoteca', 'status', 'failed', req.app.locals.env);
+        await upsertOrderMetafield(
+          shopifyOrderId,
+          'printoteca',
+          'last_error',
+          missingMessage,
+          req.app.locals.env
+        );
+        await addRemoveOrderTags(
+          shopifyOrderId,
+          ['printoteca:failed'],
+          ['printoteca:pending'],
+          req.app.locals.env
+        );
+        return;
+      }
       const designUrls = collectDesignUrls(transformed);
 
       logBox('SHOPIFY_WEBHOOK_RECEIVED', [
