@@ -9,6 +9,9 @@ function requestLogger(req, _res, next) {
     contentLength,
     bodyType,
   });
+  if (req.originalUrl.startsWith('/webhooks/')) {
+    console.log(JSON.stringify(req.body, null, 2));
+  }
   next();
 }
 

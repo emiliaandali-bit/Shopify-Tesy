@@ -1,7 +1,7 @@
 const logger = require('../services/logger');
 const TransactionLog = require('../models/TransactionLog');
 const { syncFulfillmentFromPrintotecaStatus } = require('../services/shopifyAdminClient');
-const warehouseService = require('../services/warehouse.service');
+const printotecaService = require('../services/printoteca.service');
 
 async function handlePrintotecaStatus(req, res) {
   const env = req.app.locals.env;
@@ -55,7 +55,7 @@ async function deleteLog(req, res) {
 
 async function getWarehouseOrderStatus(req, res) {
   try {
-    const response = await warehouseService.getOrderStatus(req.params.id, req.app.locals.env);
+    const response = await printotecaService.getOrderStatus(req.params.id, req.app.locals.env);
     return res.json({ status: response });
   } catch (error) {
     logger.error('Failed to fetch warehouse order status', { error: error?.message });
@@ -65,7 +65,7 @@ async function getWarehouseOrderStatus(req, res) {
 
 async function cancelWarehouseOrder(req, res) {
   try {
-    const response = await warehouseService.cancelOrder(req.params.id, req.app.locals.env);
+    const response = await printotecaService.cancelOrder(req.params.id, req.app.locals.env);
     return res.json({ status: response });
   } catch (error) {
     logger.error('Failed to cancel warehouse order', { error: error?.message });

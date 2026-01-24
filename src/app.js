@@ -8,9 +8,8 @@ function createApp(env) {
   const app = express();
   app.locals.env = env;
 
+  app.use(express.json({ limit: '2mb' }));
   app.use(requestLogger);
-  app.use('/webhooks/shopify', express.json());
-  app.use(express.json());
 
   app.use(createShopifyRouter());
   app.use(createWarehouseRouter());

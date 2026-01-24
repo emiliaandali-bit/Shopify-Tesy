@@ -218,7 +218,71 @@ function transformPaidOrderToWarehouse(payload, env) {
   };
 }
 
+function normalizePhone(phone) {
+  if (!phone) return null;
+  const value = String(phone).trim();
+  if (!value) return null;
+  const normalized = value.replace(/^\++/, '');
+  return `+${normalized}`;
+}
+
+function toPropertiesMap(properties = []) {
+  return Object.fromEntries(
+    properties
+      .filter((prop) => prop?.name)
+      .map((prop) => [prop.name, prop.value ?? null])
+  );
+}
+
+function transformDraftOrderToPrintoteca(payload) {
+  const draftOrder = payload?.draft_order;
+  if (!draftOrder) {
+    throw new Error('Missing draft_order payload.');
+  }
+
+  const shippingSource = draftOrder?.shipping_address || {};
+  const shippingAddress = {
+    firstName: shippingSource?.first_name || '',
+    lastName: shippingSource?.last_name || '',
+    company: shippingSource?.company ?? null,
+    address1: shippingSource?.address1 || '',
+    address2: shippingSource?.address2 ?? null,
+    city: shippingSource?.city || '',
+    county: shippingSource?.province || '',
+    postcode: shippingSource?.zip || '',
+    country: shippingSource?.country || '',
+    phone1: normalizePhone(shippingSource?.phone),
+  };
+
+  const items = (draftOrder?.line_items || []).map((lineItem) => {
+    const props = toPropertiesMap(lineItem?.properties || []);
+    return {
+      pn: lineItem?.sku || '',
+      quantity: Number(lineItem?.quantity || 0),
+      retailPrice: Number(lineItem?.price || 0),
+      description: lineItem?.name || lineItem?.title || '',
+      designs: {
+        front: props._tib_design_link_1 ?? null,
+        back: props._tib_design_link_2 ?? null,
+      },
+      mockups: {
+        front: props._customization_image ?? null,
+      },
+    };
+  });
+
+  return {
+    brandName: 'Hugs & Mugs',
+    shipping_address: shippingAddress,
+    shipping: {
+      shippingMethod: 'regular',
+    },
+    items,
+  };
+}
+
 module.exports = {
   transformDraftOrderToWarehouse,
   transformPaidOrderToWarehouse,
+  transformDraftOrderToPrintoteca,
 };
