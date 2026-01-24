@@ -73,8 +73,19 @@ async function getOrderStatus(orderId, env) {
     orderId
   )}`;
   const url = buildSignedUrl('/order.php', query, env);
-  const response = await axios.get(url, { timeout: 10000 });
-  return response.data;
+  const urlMasked = maskSignature(url);
+  try {
+    const response = await axios.get(url, { timeout: 10000 });
+    return response.data;
+  } catch (error) {
+    logger.error('PRINTOTECA_ERROR', {
+      status: error?.response?.status,
+      urlMasked,
+      responseData: error?.response?.data,
+      responseHeaders: error?.response?.headers,
+    });
+    throw error;
+  }
 }
 
 async function cancelOrder(orderId, env) {
@@ -82,14 +93,25 @@ async function cancelOrder(orderId, env) {
     orderId
   )}`;
   const url = buildSignedUrl('/orders.php', query, env);
+  const urlMasked = maskSignature(url);
 
   if (env.PRINTOTECA_ENABLE_SANDBOX) {
-    logger.info('Sandbox mode enabled - skipping Printoteca cancel', { url, orderId });
+    logger.info('Sandbox mode enabled - skipping Printoteca cancel', { url: urlMasked, orderId });
     return { sandbox: true, success: true };
   }
 
-  const response = await axios.delete(url, { timeout: 10000 });
-  return response.data;
+  try {
+    const response = await axios.delete(url, { timeout: 10000 });
+    return response.data;
+  } catch (error) {
+    logger.error('PRINTOTECA_ERROR', {
+      status: error?.response?.status,
+      urlMasked,
+      responseData: error?.response?.data,
+      responseHeaders: error?.response?.headers,
+    });
+    throw error;
+  }
 }
 
 module.exports = {

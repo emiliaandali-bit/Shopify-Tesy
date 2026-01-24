@@ -134,8 +134,14 @@ async function syncFulfillmentFromPrintotecaStatus(orderId, printotecaPayload, e
 async function sendTrackingFulfillment(orderId, tracking, env) {
   const client = createClient(env, '2023-10');
   try {
-    await client.post(`/orders/${orderId}/fulfillments.json`, {
+    const fulfillmentOrderId = await getFulfillmentOrderId(orderId, env);
+    if (!fulfillmentOrderId) {
+      logger.warn(`No fulfillment order found for Shopify order ${orderId}`);
+      return null;
+    }
+    const response = await client.post(`/fulfillments.json`, {
       fulfillment: {
+        line_items_by_fulfillment_order: [{ fulfillment_order_id: fulfillmentOrderId }],
         tracking_info: {
           number: tracking.tracking_number,
           url: tracking.tracking_url,
@@ -145,6 +151,7 @@ async function sendTrackingFulfillment(orderId, tracking, env) {
       },
     });
     logger.info('Sent Shopify fulfillment tracking update', { orderId });
+    return response.data;
   } catch (error) {
     logger.error('Failed to send Shopify fulfillment tracking', {
       orderId,
@@ -164,6 +171,7 @@ async function fetchShopifyOrder(orderId, env) {
 }
 
 module.exports = {
+  createClient,
   savePrintotecaOrderIdMetafield,
   savePrintotecaExternalIdMetafield,
   getPrintotecaOrderIdMetafield,

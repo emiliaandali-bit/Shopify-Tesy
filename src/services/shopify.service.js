@@ -1,6 +1,7 @@
 const logger = require('./logger');
 const TransactionLog = require('../models/TransactionLog');
 const warehouseService = require('./warehouse.service');
+const printotecaService = require('./printoteca.service');
 const {
   transformDraftOrderToWarehouse,
   transformPaidOrderToWarehouse,
@@ -162,7 +163,7 @@ async function processCancelledOrder(orderId, env) {
     return { error: 'No Printoteca order id found.' };
   }
 
-  const response = await warehouseService.cancelOrder(printotecaOrderId, env);
+  const response = await printotecaService.cancelOrder(printotecaOrderId, env);
   return { response };
 }
 

@@ -1,21 +1,41 @@
 const logger = require('../services/logger');
 const TransactionLog = require('../models/TransactionLog');
 const { sendTrackingFulfillment } = require('../services/shopifyAdminClient');
+const {
+  upsertOrderMetafield,
+  addRemoveOrderTags,
+  getOrderMetafield,
+} = require('../services/shopifyStatus.service');
 
 async function handleOrderShipped(req, res) {
   const payload = req.body;
-  const printotecaOrderId = payload?.printoteca_order_id || payload?.id;
-  if (!printotecaOrderId) {
-    logger.warn('Printoteca orders/shipped missing printoteca_order_id');
-    return res.status(400).json({ error: 'Missing printoteca_order_id' });
-  }
-
   try {
-    const logEntry = await TransactionLog.findByWarehouseOrderId(printotecaOrderId);
-    const shopifyOrderId = logEntry?.rawShopifyPayload?.id || logEntry?.transformedPayload?.external_id;
+    const shopifyOrderId = Number(payload?.external_id);
     if (!shopifyOrderId) {
-      logger.warn('Unable to resolve Shopify order for Printoteca shipment', { printotecaOrderId });
-      return res.status(404).json({ error: 'Shopify order not found' });
+      logger.warn('Printoteca orders/shipped missing external_id');
+      return res.status(400).json({ error: 'Missing external_id' });
+    }
+
+    const existingFulfillmentId = await getOrderMetafield(
+      shopifyOrderId,
+      'printoteca',
+      'fulfillment_id',
+      req.app.locals.env
+    );
+    if (existingFulfillmentId) {
+      logger.info('Shopify fulfillment already exists, skipping', {
+        shopifyOrderId,
+        fulfillmentId: existingFulfillmentId,
+      });
+      return res.json({ status: 'ok', skipped: true });
+    }
+
+    const printotecaOrderId = payload?.id || payload?.printoteca_order_id;
+    if (printotecaOrderId) {
+      const logEntry = await TransactionLog.findByWarehouseOrderId(printotecaOrderId);
+      if (!logEntry) {
+        logger.info('No transaction log found for Printoteca shipment', { printotecaOrderId });
+      }
     }
 
     const trackingPayload = {
@@ -24,7 +44,32 @@ async function handleOrderShipped(req, res) {
       tracking_company: payload?.tracking_company || payload?.trackingCompany || 'Other',
     };
 
-    await sendTrackingFulfillment(Number(shopifyOrderId), trackingPayload, req.app.locals.env);
+    const trackingNumber = trackingPayload.tracking_number;
+    if (trackingNumber) {
+      const response = await sendTrackingFulfillment(
+        Number(shopifyOrderId),
+        trackingPayload,
+        req.app.locals.env
+      );
+      const fulfillmentId = response?.fulfillment?.id || response?.id;
+      if (fulfillmentId) {
+        await upsertOrderMetafield(
+          shopifyOrderId,
+          'printoteca',
+          'fulfillment_id',
+          String(fulfillmentId),
+          req.app.locals.env
+        );
+      }
+    }
+
+    await addRemoveOrderTags(
+      shopifyOrderId,
+      ['printoteca:shipped'],
+      ['printoteca:pending', 'printoteca:sent', 'printoteca:failed'],
+      req.app.locals.env
+    );
+    await upsertOrderMetafield(shopifyOrderId, 'printoteca', 'status', 'shipped', req.app.locals.env);
     return res.json({ status: 'ok' });
   } catch (error) {
     logger.error('Failed to handle Printoteca orders/shipped', { error: error?.message });
