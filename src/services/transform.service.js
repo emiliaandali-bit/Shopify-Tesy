@@ -1,4 +1,5 @@
 const { SIZE_MAP, WORDING_MAP, SKU_REPLACEMENTS } = require('../constants/warehouseMappings');
+const logger = require('./logger');
 
 function normalizeSku(sku) {
   if (!sku) return '';
@@ -218,19 +219,17 @@ function transformPaidOrderToWarehouse(payload, env) {
   };
 }
 
-function normalizePhone(phone) {
-  if (!phone) return '';
-  const value = String(phone).trim();
+function normalizePhone(phone = '') {
+  const value = String(phone || '').trim();
   if (!value) return '';
-  const normalized = value.replace(/^\++/, '');
-  return `+${normalized}`;
+  return value.startsWith('++') ? value.replace(/^(\++)/, '+') : value;
 }
 
 function formatMoney(value) {
-  if (value === null || value === undefined || value === '') return '0.00';
+  if (value === null || value === undefined || value === '') return 0;
   const numberValue = Number(value);
-  if (Number.isNaN(numberValue)) return '0.00';
-  return numberValue.toFixed(2);
+  if (Number.isNaN(numberValue)) return 0;
+  return Number(numberValue.toFixed(2));
 }
 
 function pruneNulls(value) {
@@ -271,6 +270,17 @@ function normalizeProperties(input) {
   return {};
 }
 
+function splitName(fullName = '') {
+  const parts = String(fullName).trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return { firstName: '', lastName: '' };
+  }
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: '' };
+  }
+  return { firstName: parts.slice(0, -1).join(' '), lastName: parts.slice(-1)[0] };
+}
+
 function parseOrderProperties(payload) {
   const rawOrder = payload?.raw || {};
   const orderName = rawOrder?.name || rawOrder?.id || payload?.shopifyOrderId || '';
@@ -287,24 +297,61 @@ function parseOrderProperties(payload) {
 }
 
 function parseShipping(payload) {
-  const shipping = payload?.shippingAddress || {};
-  return {
+  const order = payload?.order ? payload.order : payload?.raw ? payload.raw : payload;
+  const ship = order?.shipping_address || order?.shippingAddress || null;
+  const bill = order?.billing_address || order?.billingAddress || null;
+  const addrCandidate =
+    ship &&
+    (ship.first_name ||
+      ship.last_name ||
+      ship.name ||
+      ship.address1 ||
+      ship.city ||
+      ship.zip ||
+      ship.phone)
+      ? ship
+      : bill || {};
+  const nameParts = splitName(addrCandidate?.name || '');
+  const mapped = {
     shipping_address: {
-      firstName: shipping?.first_name || '',
-      lastName: shipping?.last_name || '',
-      company: shipping?.company ?? '',
-      address1: shipping?.address1 ?? '',
-      address2: shipping?.address2 ?? '',
-      city: shipping?.city ?? '',
-      county: shipping?.province ?? '',
-      postcode: shipping?.zip ?? '',
-      country: shipping?.country ?? '',
-      phone1: normalizePhone(shipping?.phone ?? ''),
+      firstName: addrCandidate?.first_name || nameParts.firstName || order?.customer?.first_name || '',
+      lastName: addrCandidate?.last_name || nameParts.lastName || order?.customer?.last_name || '',
+      company: addrCandidate?.company ?? '',
+      address1: addrCandidate?.address1 || '',
+      address2: addrCandidate?.address2 || '',
+      city: addrCandidate?.city || '',
+      county: addrCandidate?.province || '',
+      postcode: addrCandidate?.zip || '',
+      country: addrCandidate?.country || '',
+      phone1: normalizePhone(addrCandidate?.phone || order?.phone || ''),
     },
     shipping: {
       shippingMethod: 'regular',
     },
   };
+  logger.info(
+    'Shipping mapping debug',
+    JSON.stringify(
+      {
+        hasShippingAddress: Boolean(order?.shipping_address),
+        hasBillingAddress: Boolean(order?.billing_address),
+        chosen: addrCandidate === ship ? 'shipping' : 'billing',
+        shipKeys: ship ? Object.keys(ship) : null,
+        billKeys: bill ? Object.keys(bill) : null,
+        mapped: {
+          firstName: mapped.shipping_address.firstName,
+          lastName: mapped.shipping_address.lastName,
+          address1: mapped.shipping_address.address1,
+          city: mapped.shipping_address.city,
+          postcode: mapped.shipping_address.postcode,
+          phone1: mapped.shipping_address.phone1,
+        },
+      },
+      null,
+      2
+    )
+  );
+  return mapped;
 }
 
 function parseItems(payload) {
@@ -351,10 +398,23 @@ function buildPrintotecaOrderFromShopify(payload) {
   };
 }
 
+function buildPrintotecaCreateBodyFromShopify(payload) {
+  const fullOrder = buildPrintotecaOrderFromShopify(payload);
+  return {
+    brandName: fullOrder.brandName,
+    comment: fullOrder.comment,
+    external_id: fullOrder.external_id,
+    shipping_address: fullOrder.shipping_address,
+    shipping: fullOrder.shipping,
+    items: fullOrder.items,
+  };
+}
+
 module.exports = {
   transformDraftOrderToWarehouse,
   transformPaidOrderToWarehouse,
   buildPrintotecaOrderFromShopify,
+  buildPrintotecaCreateBodyFromShopify,
   parseOrderProperties,
   parseShipping,
   parseItems,

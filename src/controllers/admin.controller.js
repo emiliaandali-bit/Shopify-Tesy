@@ -1,5 +1,8 @@
 const logger = require('../services/logger');
-const { buildPrintotecaOrderFromShopify } = require('../services/transform.service');
+const {
+  buildPrintotecaOrderFromShopify,
+  buildPrintotecaCreateBodyFromShopify,
+} = require('../services/transform.service');
 const printotecaService = require('../services/printoteca.service');
 const { waitForDesignAssetsReady } = require('../services/assets.service');
 const {
@@ -13,6 +16,18 @@ const {
   getOrderMetafield,
   setShopifyPrintotecaStatusSent,
 } = require('../services/shopifyStatus.service');
+
+function getMissingShippingFields(body) {
+  const missing = [];
+  if (!body?.shipping_address?.firstName) missing.push('shipping_address.firstName');
+  if (!body?.shipping_address?.lastName) missing.push('shipping_address.lastName');
+  if (!body?.shipping_address?.address1) missing.push('shipping_address.address1');
+  if (!body?.shipping_address?.city) missing.push('shipping_address.city');
+  if (!body?.shipping_address?.postcode) missing.push('shipping_address.postcode');
+  if (!body?.shipping_address?.country) missing.push('shipping_address.country');
+  if (!body?.shipping_address?.phone1) missing.push('shipping_address.phone1');
+  return missing;
+}
 
 async function reconcileOrder(shopifyOrderId, env) {
   const existingPrintotecaId = await getOrderMetafield(
@@ -142,10 +157,11 @@ async function resendOrder(req, res) {
       );
 
       const transformed = buildPrintotecaOrderFromShopify(normalized);
+      const printotecaCreateBody = buildPrintotecaCreateBodyFromShopify(normalized);
       logger.info(
         'Printoteca items summary',
         JSON.stringify(
-          transformed.items.map((item) => ({
+          printotecaCreateBody.items.map((item) => ({
             pn: item.pn,
             title: item.title,
             designFront: item.designs?.front,
@@ -158,10 +174,46 @@ async function resendOrder(req, res) {
       );
       logger.info(
         'Printoteca items (final)',
-        JSON.stringify(JSON.parse(JSON.stringify(transformed.items)), null, 2)
+        JSON.stringify(JSON.parse(JSON.stringify(printotecaCreateBody.items)), null, 2)
       );
 
-      const missingDesignItems = (transformed?.items || []).filter(
+      const missingShippingFields = getMissingShippingFields(printotecaCreateBody);
+      if (missingShippingFields.length > 0) {
+        logger.error(
+          'PRINTOTECA_PAYLOAD_INVALID',
+          JSON.stringify(
+            {
+              shopifyOrderId,
+              missing: missingShippingFields,
+            },
+            null,
+            2
+          )
+        );
+        await upsertOrderMetafield(
+          shopifyOrderId,
+          'printoteca',
+          'status',
+          'failed',
+          req.app.locals.env
+        );
+        await upsertOrderMetafield(
+          shopifyOrderId,
+          'printoteca',
+          'last_error',
+          `Missing shipping fields: ${missingShippingFields.join(', ')}`,
+          req.app.locals.env
+        );
+        await addRemoveOrderTags(
+          shopifyOrderId,
+          ['printoteca:failed'],
+          ['printoteca:pending'],
+          req.app.locals.env
+        );
+        return;
+      }
+
+      const missingDesignItems = (printotecaCreateBody?.items || []).filter(
         (item) => !item?.designs?.front
       );
       if (missingDesignItems.length > 0) {
@@ -202,7 +254,7 @@ async function resendOrder(req, res) {
       }
       const designUrls = Array.from(
         new Set(
-          (transformed?.items || [])
+          (printotecaCreateBody?.items || [])
             .flatMap((item) => [
               item?.designs?.front,
               item?.designs?.back,
@@ -276,7 +328,7 @@ async function resendOrder(req, res) {
         req.app.locals.env
       );
 
-      const response = await printotecaService.createOrder(transformed, req.app.locals.env);
+      const response = await printotecaService.createOrder(printotecaCreateBody, req.app.locals.env);
       const printotecaId = printotecaService.extractPrintotecaId(response);
 
       if (printotecaId) {

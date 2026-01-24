@@ -1,6 +1,9 @@
 const logger = require('../services/logger');
 const { processDraftOrder, processCancelledOrder } = require('../services/shopify.service');
-const { buildPrintotecaOrderFromShopify } = require('../services/transform.service');
+const {
+  buildPrintotecaOrderFromShopify,
+  buildPrintotecaCreateBodyFromShopify,
+} = require('../services/transform.service');
 const printotecaService = require('../services/printoteca.service');
 const {
   savePrintotecaOrderIdMetafield,
@@ -14,6 +17,18 @@ const {
   setShopifyPrintotecaStatusSent,
 } = require('../services/shopifyStatus.service');
 const { logBox, logJson } = require('../utils/prettyLog');
+
+function getMissingShippingFields(body) {
+  const missing = [];
+  if (!body?.shipping_address?.firstName) missing.push('shipping_address.firstName');
+  if (!body?.shipping_address?.lastName) missing.push('shipping_address.lastName');
+  if (!body?.shipping_address?.address1) missing.push('shipping_address.address1');
+  if (!body?.shipping_address?.city) missing.push('shipping_address.city');
+  if (!body?.shipping_address?.postcode) missing.push('shipping_address.postcode');
+  if (!body?.shipping_address?.country) missing.push('shipping_address.country');
+  if (!body?.shipping_address?.phone1) missing.push('shipping_address.phone1');
+  return missing;
+}
 
 async function handleDraftOrder(req, res) {
   const payload = req.body;
@@ -147,14 +162,15 @@ async function handleOrdersPaid(req, res) {
       }
 
       const transformed = buildPrintotecaOrderFromShopify(normalized);
+      const printotecaCreateBody = buildPrintotecaCreateBodyFromShopify(normalized);
       const requestMeta = printotecaService.buildCreateRequest(
-        JSON.stringify(transformed),
+        JSON.stringify(printotecaCreateBody),
         req.app.locals.env
       );
       logger.info(
         'Printoteca items summary',
         JSON.stringify(
-          transformed.items.map((item) => ({
+          printotecaCreateBody.items.map((item) => ({
             pn: item.pn,
             title: item.title,
             designFront: item.designs?.front,
@@ -167,10 +183,40 @@ async function handleOrdersPaid(req, res) {
       );
       logger.info(
         'Printoteca items (final)',
-        JSON.stringify(JSON.parse(JSON.stringify(transformed.items)), null, 2)
+        JSON.stringify(JSON.parse(JSON.stringify(printotecaCreateBody.items)), null, 2)
       );
 
-      const missingDesignItems = (transformed?.items || []).filter(
+      const missingShippingFields = getMissingShippingFields(printotecaCreateBody);
+      if (missingShippingFields.length > 0) {
+        logger.error(
+          'PRINTOTECA_PAYLOAD_INVALID',
+          JSON.stringify(
+            {
+              shopifyOrderId,
+              missing: missingShippingFields,
+            },
+            null,
+            2
+          )
+        );
+        await upsertOrderMetafield(shopifyOrderId, 'printoteca', 'status', 'failed', req.app.locals.env);
+        await upsertOrderMetafield(
+          shopifyOrderId,
+          'printoteca',
+          'last_error',
+          `Missing shipping fields: ${missingShippingFields.join(', ')}`,
+          req.app.locals.env
+        );
+        await addRemoveOrderTags(
+          shopifyOrderId,
+          ['printoteca:failed'],
+          ['printoteca:pending'],
+          req.app.locals.env
+        );
+        return;
+      }
+
+      const missingDesignItems = (printotecaCreateBody?.items || []).filter(
         (item) => !item?.designs?.front
       );
       if (missingDesignItems.length > 0) {
@@ -203,7 +249,7 @@ async function handleOrdersPaid(req, res) {
         );
         return;
       }
-      const designUrls = collectDesignUrls(transformed);
+      const designUrls = collectDesignUrls(printotecaCreateBody);
 
       logBox('SHOPIFY_WEBHOOK_RECEIVED', [
         `shopify_order_id: ${shopifyOrderId}`,
@@ -289,7 +335,10 @@ async function handleOrdersPaid(req, res) {
       );
 
       try {
-        const response = await printotecaService.createOrder(transformed, req.app.locals.env);
+        const response = await printotecaService.createOrder(
+          printotecaCreateBody,
+          req.app.locals.env
+        );
         logJson('PRINTOTECA_RESPONSE', response);
         const printotecaId = printotecaService.extractPrintotecaId(response);
         if (printotecaId) {
@@ -337,7 +386,10 @@ async function handleOrdersPaid(req, res) {
             concurrency: 3,
           });
           if (retryReady.ready) {
-            const retryResponse = await printotecaService.createOrder(transformed, req.app.locals.env);
+            const retryResponse = await printotecaService.createOrder(
+              printotecaCreateBody,
+              req.app.locals.env
+            );
             logJson('PRINTOTECA_RESPONSE', retryResponse);
             const retryId = printotecaService.extractPrintotecaId(retryResponse);
             if (retryId) {
