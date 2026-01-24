@@ -233,6 +233,22 @@ function formatMoney(value) {
   return numberValue.toFixed(2);
 }
 
+function pruneNulls(value) {
+  if (Array.isArray(value)) {
+    return value.map(pruneNulls);
+  }
+  if (value && typeof value === 'object') {
+    return Object.entries(value).reduce((acc, [key, item]) => {
+      if (item === null) {
+        return acc;
+      }
+      acc[key] = pruneNulls(item);
+      return acc;
+    }, {});
+  }
+  return value;
+}
+
 function toPropertiesMap(properties = []) {
   return Object.fromEntries(
     properties
@@ -254,7 +270,7 @@ function parseOrderProperties(payload) {
 
 function parseShipping(payload) {
   const shipping = payload?.draft_order?.shipping_address || {};
-  return {
+  const result = {
     shipping_address: {
       firstName: shipping?.first_name || '',
       lastName: shipping?.last_name || '',
@@ -271,12 +287,13 @@ function parseShipping(payload) {
       shippingMethod: 'regular',
     },
   };
+  return pruneNulls(result);
 }
 
 function parseItems(payload) {
   const items = (payload?.draft_order?.line_items || []).map((lineItem) => {
     const props = toPropertiesMap(lineItem?.properties || []);
-    return {
+    const item = {
       pn: lineItem?.sku ?? '',
       title: lineItem?.title ?? '',
       quantity: Number(lineItem?.quantity ?? 0),
@@ -290,6 +307,7 @@ function parseItems(payload) {
         front: props._customization_image ?? null,
       },
     };
+    return pruneNulls(item);
   });
   return { items };
 }
@@ -319,4 +337,5 @@ module.exports = {
   parseShipping,
   parseItems,
   formatMoney,
+  pruneNulls,
 };
