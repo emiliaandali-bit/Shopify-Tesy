@@ -1,13 +1,13 @@
 # Shopify → Printoteca Bridge
 
-Node.js + TypeScript service that receives Shopify **Order Paid** webhooks, extracts Teeinblue design links from line items, maps them to Printoteca's order format, and sends them to Printoteca.
+Node.js + Express (CommonJS) service that receives Shopify **Orders Paid** webhooks, maps line item properties into Printoteca’s order format, sends the order to Printoteca, and keeps Shopify updated with tags/metafields and fulfillment tracking.
 
 ## Quick start
 
 1. Install Node.js 20+.
 2. Clone this repository.
 3. Copy `.env.example` to `.env` and fill in the values from Shopify and Printoteca.
-4. Install dependencies and start in watch mode:
+4. Install dependencies and start:
 
 ```bash
 npm install
@@ -22,12 +22,12 @@ All variables are required unless a default is indicated:
 
 - `PORT` (default `8080`)
 - `NODE_ENV` (`development` | `production`)
-- `SHOPIFY_WEBHOOK_SECRET` (from Shopify webhook configuration)
+- `SHOPIFY_WEBHOOK_SECRET` (from Shopify webhook configuration; HMAC verification is currently disabled)
 - `SHOPIFY_STORE_DOMAIN` (e.g., `your-store.myshopify.com`)
 - `SHOPIFY_ADMIN_ACCESS_TOKEN` (Shopify Admin REST token with Orders/Fulfillment scopes)
 - `PRINTOTECA_APP_ID` (from Printoteca)
 - `PRINTOTECA_SECRET_KEY` (from Printoteca)
-- `PRINTOTECA_BRAND_NAME`
+- `PRINTOTECA_BRAND_NAME` (used for legacy flows; current Printoteca payloads set `brand` to `Hugs & Mugs` by design)
 - `PRINTOTECA_BASE_URL` (default `https://printoteca.ro/api`)
 - `PRINTOTECA_DEFAULT_SHIPPING_METHOD` (`regular` | `recorded` | `courier` | `collection`, default `courier`)
 - `PRINTOTECA_ENABLE_SANDBOX` (`true` | `false`; when true, orders are **not** sent to Printoteca and requests are only logged)
@@ -39,11 +39,37 @@ Compatibility aliases supported by the app (for teams that already use them else
 
 ## Endpoints
 
-- `POST /webhooks/shopify/orders-paid` — Shopify webhook endpoint. It validates the HMAC header and triggers order mapping and submission.
-- `POST /webhooks/shopify/orders-cancelled` — Shopify webhook endpoint to cancel Printoteca orders when the Shopify order is cancelled.
-- `POST /webhooks/printoteca/order-status` — Printoteca webhook endpoint to sync shipment/fulfillment info back to Shopify.
+### Shopify webhooks
+- `POST /webhooks/shopify/orders-paid` — Receives Shopify paid order payload (either top-level order or `{ order: ... }`). Responds `200` immediately, then:
+  - normalizes payload
+  - builds Printoteca payload with `external_id = Shopify order id`
+  - sends to Printoteca (idempotent based on `printoteca.order_id` metafield)
+  - updates Shopify tags/metafields for pipeline status
+- `POST /webhooks/shopify/orders-cancelled` — Cancels the linked Printoteca order using the stored `printoteca.order_id` metafield.
+- `POST /webhooks/shopify/draft-orders` — Existing draft-order handler (legacy flow).
+
+### Printoteca webhooks
+- `POST /webhooks/printoteca/order-status` — Syncs Printoteca status updates to Shopify.
+- `POST /webhooks/printoteca/orders-shipped` — Marks Shopify order as shipped and creates a Shopify fulfillment using tracking info (if present).
+- `POST /webhooks/printoteca/orders-deleted` — Marks Shopify order as deleted in tags/metafields.
+
+### Internal/debug endpoints
+- `POST /debug/transform` — Returns the transformed Printoteca payload without sending to Printoteca.
+- `POST /admin/printoteca/resend/:shopifyOrderId` — Reprocesses an existing Shopify order to Printoteca.
+  - Default behavior is idempotent; if `printoteca.order_id` exists, it returns `action: "skipped"`.
+  - Use `?force=true` to create a new Printoteca order and overwrite the metafield.
+
+### Observability
+- `GET /api/logs` — List recent transaction logs.
+- `GET /api/logs/:id` — Inspect a specific transaction log.
+- `DELETE /api/logs/:id` — Delete a log entry.
+
+### Warehouse helpers
+- `GET /api/warehouse/orders/:id` — Fetch Printoteca order status.
+- `DELETE /api/warehouse/orders/:id` — Cancel/delete a Printoteca order.
+
+### Health
 - `GET /health` — Basic health check.
-- `GET /debug/order-schema` — Example Printoteca order payload for quick reference.
 
 ## Shopify setup (Orders Paid webhook)
 
@@ -52,7 +78,7 @@ Compatibility aliases supported by the app (for teams that already use them else
    - Event: **Orders paid (orders/paid)**
    - Format: **JSON**
    - URL: `https://<render-service-name>.onrender.com/webhooks/shopify/orders-paid`
-3. Copy the **Webhook signing secret** and set it as `SHOPIFY_WEBHOOK_SECRET` in Render's environment variables.
+3. Copy the **Webhook signing secret** and set it as `SHOPIFY_WEBHOOK_SECRET` in Render's environment variables (HMAC verification is currently disabled; keep the value for future re-enable).
 4. Create or update Shopify products so that:
    - The SKU matches the Printoteca product code.
    - The `vendor` or `product_type` field is set to `Printoteca` (used to filter which items to send).
@@ -73,39 +99,47 @@ Compatibility aliases supported by the app (for teams that already use them else
 5. Enable auto-deploy on new commits (optional).
 6. After deploy, set the Shopify webhook URL to the Render service address.
 
-## Project structure
+## Project structure (current)
 
 ```
 render.yaml           # Suggested Render configuration
 .env.example          # Sample environment values
 src/
-  index.ts            # Entrypoint (loads env + starts server)
-  server.ts           # Express app setup
+  app.js                   # Express app setup
+  server.js                # Entrypoint
   routes/
-    shopifyWebhooks.ts# Webhook endpoint with HMAC verification
-    health.ts         # Health + debug routes
+    shopify.routes.js      # Shopify webhooks + admin resend/debug
+    warehouse.routes.js    # Printoteca webhooks + logs + warehouse helpers
+  controllers/
+    shopify.controller.js  # Shopify webhook handling
+    admin.controller.js    # Resend endpoint
+    printoteca.controller.js # Printoteca shipped webhook
+    printotecaDeleted.controller.js # Printoteca deleted webhook
+    warehouse.controller.js# Warehouse helpers + logs
   services/
-    env.ts            # Env loading + validation
-    logger.ts         # Simple timestamped logger
-    shopifyVerifier.ts# HMAC verification helper
-    mapping.ts        # Shopify → Printoteca mapper
-    printotecaClient.ts# API client with signing
-    orderHandler.ts   # Orchestrates mapping + sending
-  types/
-    shopify.ts        # Minimal Shopify types used
-    printoteca.ts     # Printoteca payload types
-src/__tests__/mapping.test.ts # Jest tests for mapping helpers
+    env.js                 # Env loading + validation
+    logger.js              # Simple timestamped logger
+    transform.service.js   # Shopify → Printoteca builder
+    printoteca.service.js  # Printoteca API client + signing
+    shopifyAdminClient.js  # Shopify Admin API helper
+    shopifyStatus.service.js # Shopify tags/metafields helper
+  models/
+    TransactionLog.js      # Transaction log storage
+  utils/
+    prettyLog.js           # Pretty logging helpers
+src/__tests__/transform.test.js # Jest test for Printoteca transform
 ```
 
-## How mapping works
+## How mapping works (Printoteca payload)
 
-- Only line items with a SKU **and** vendor/product_type `Printoteca` are sent.
-- Design links are read from line item properties in this order:
-  1. `_tib_design_link_1` → `designs.front`
-  2. `_tib_design_link_2` → `designs.back`
-  3. `_customization_image` → fallback for `designs.front` and also stored as a mockup
-- Personalization properties are concatenated into the item description for easy reference.
-- Shipping method is inferred from the first Shopify shipping line; if nothing matches, the default shipping method is used.
+- Uses `external_id = Shopify order id` to link orders between Shopify and Printoteca.
+- Each line item maps to a Printoteca item with:
+  - `pn` from `line_item.sku`
+  - `title` from `line_item.title`
+  - `designs.front` from `_tib_design_link_1`
+  - `designs.back` from `_tib_design_link_2` (if present)
+  - `mockups.front` from `_customization_image` (if present)
+- Optional fields with `null` values are omitted from the final payload.
 
 ## Testing
 
@@ -118,4 +152,6 @@ npm test
 ## Notes
 
 - Set `PRINTOTECA_ENABLE_SANDBOX=true` while testing so orders are logged but not sent to Printoteca.
-- The webhook route always responds `200` after HMAC validation to keep Shopify satisfied, even if internal processing fails (errors are logged).
+- The orders-paid webhook responds `200` immediately to avoid Shopify retries and then processes asynchronously.
+- Printoteca status is visible in Shopify via tags:
+  `printoteca:pending`, `printoteca:sent`, `printoteca:failed`, `printoteca:deleted`, `printoteca:shipped`.
