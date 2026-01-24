@@ -150,15 +150,15 @@ async function processPaidOrder(payload, env) {
   }
 }
 
-async function processCancelledOrder(payload, env) {
-  const orderId = Number(payload?.id);
-  if (Number.isNaN(orderId)) {
+async function processCancelledOrder(orderId, env) {
+  const numericOrderId = Number(orderId);
+  if (Number.isNaN(numericOrderId)) {
     return { error: 'Invalid Shopify order id.' };
   }
 
-  const printotecaOrderId = await getPrintotecaOrderIdMetafield(orderId, env);
+  const printotecaOrderId = await getPrintotecaOrderIdMetafield(numericOrderId, env);
   if (!printotecaOrderId) {
-    logger.warn(`No Printoteca order id metafield found for Shopify order ${orderId}`);
+    logger.warn(`No Printoteca order id metafield found for Shopify order ${numericOrderId}`);
     return { error: 'No Printoteca order id found.' };
   }
 

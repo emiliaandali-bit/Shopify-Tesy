@@ -33,12 +33,35 @@ async function savePrintotecaOrderIdMetafield(orderId, printotecaOrderId, env) {
   }
 }
 
+async function savePrintotecaExternalIdMetafield(orderId, externalId, env) {
+  const client = createClient(env);
+  try {
+    await client.post(`/orders/${orderId}/metafields.json`, {
+      metafield: {
+        namespace: 'printoteca',
+        key: 'external_id',
+        type: 'single_line_text_field',
+        value: String(externalId),
+      },
+    });
+    logger.info(`Saved Printoteca external id metafield for Shopify order ${orderId}`);
+  } catch (error) {
+    logger.error('Failed to save Printoteca external id metafield', {
+      orderId,
+      error: error?.response?.data || error?.message,
+      status: error?.response?.status,
+    });
+  }
+}
+
 async function getPrintotecaOrderIdMetafield(orderId, env) {
   const client = createClient(env);
   try {
-    const response = await client.get(`/orders/${orderId}/metafields.json`);
+    const response = await client.get(`/orders/${orderId}/metafields.json`, {
+      params: { namespace: 'printoteca', key: 'order_id' },
+    });
     const metafields = response.data?.metafields || [];
-    const found = metafields.find((mf) => mf.namespace === 'printoteca' && mf.key === 'order_id');
+    const found = metafields.find((mf) => mf.key === 'order_id');
     return found?.value;
   } catch (error) {
     logger.error('Failed to fetch Printoteca metafield from Shopify', {
@@ -142,6 +165,7 @@ async function fetchShopifyOrder(orderId, env) {
 
 module.exports = {
   savePrintotecaOrderIdMetafield,
+  savePrintotecaExternalIdMetafield,
   getPrintotecaOrderIdMetafield,
   fetchShopifyOrder,
   syncFulfillmentFromPrintotecaStatus,

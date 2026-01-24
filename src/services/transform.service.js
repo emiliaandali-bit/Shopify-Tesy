@@ -258,18 +258,17 @@ function toPropertiesMap(properties = []) {
 }
 
 function parseOrderProperties(payload) {
-  const draftOrder = payload?.draft_order || {};
   return {
-    id: String(draftOrder?.id || ''),
-    external_id: String(draftOrder?.id || ''),
+    id: String(payload?.shopifyOrderId || ''),
+    external_id: String(payload?.shopifyOrderId || ''),
     type: 'order',
-    created_at: draftOrder?.created_at || '',
+    created_at: payload?.createdAt || '',
     brand: 'Hugs & Mugs',
   };
 }
 
 function parseShipping(payload) {
-  const shipping = payload?.draft_order?.shipping_address || {};
+  const shipping = payload?.shippingAddress || {};
   const result = {
     shipping_address: {
       firstName: shipping?.first_name || '',
@@ -291,7 +290,7 @@ function parseShipping(payload) {
 }
 
 function parseItems(payload) {
-  const items = (payload?.draft_order?.line_items || []).map((lineItem) => {
+  const items = (payload?.lineItems || []).map((lineItem) => {
     const props = toPropertiesMap(lineItem?.properties || []);
     const item = {
       pn: lineItem?.sku ?? '',
