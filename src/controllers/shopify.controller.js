@@ -6,6 +6,7 @@ const {
   savePrintotecaOrderIdMetafield,
   savePrintotecaExternalIdMetafield,
 } = require('../services/shopifyAdminClient');
+const { waitForDesignAssetsReady } = require('../services/assets.service');
 const {
   upsertOrderMetafield,
   addRemoveOrderTags,
@@ -38,6 +39,16 @@ function normalizeShopifyOrder(body) {
     customerEmail: order?.email,
     raw: order,
   };
+}
+
+function collectDesignUrls(printotecaPayload) {
+  const urls = [];
+  (printotecaPayload?.items || []).forEach((item) => {
+    if (item?.designs?.front) urls.push(item.designs.front);
+    if (item?.designs?.back) urls.push(item.designs.back);
+    if (item?.mockups?.front) urls.push(item.mockups.front);
+  });
+  return Array.from(new Set(urls));
 }
 
 function handleTransformPreview(req, res) {
@@ -113,6 +124,7 @@ async function handleOrdersPaid(req, res) {
 
       const transformed = buildPrintotecaOrderFromShopify(normalized);
       const requestMeta = printotecaService.buildCreateRequest(transformed, req.app.locals.env);
+      const designUrls = collectDesignUrls(transformed);
 
       logBox('SHOPIFY_WEBHOOK_RECEIVED', [
         `shopify_order_id: ${shopifyOrderId}`,
@@ -126,6 +138,76 @@ async function handleOrdersPaid(req, res) {
         `bodyLength: ${requestMeta.bodyLength}`,
         `bodySha1: ${requestMeta.bodySha1}`,
       ]);
+
+      const readiness = await waitForDesignAssetsReady(designUrls, {
+        attempts: 1,
+        delayMs: 60000,
+        concurrency: 3,
+      });
+      if (!readiness.ready) {
+        await addRemoveOrderTags(
+          shopifyOrderId,
+          ['printoteca:pending_assets'],
+          ['printoteca:failed'],
+          req.app.locals.env
+        );
+        await upsertOrderMetafield(
+          shopifyOrderId,
+          'printoteca',
+          'status',
+          'pending_assets',
+          req.app.locals.env
+        );
+        await upsertOrderMetafield(
+          shopifyOrderId,
+          'printoteca',
+          'last_error',
+          'Design files still generating; retrying',
+          req.app.locals.env
+        );
+        logger.warn('Design assets not ready, retrying', {
+          shopifyOrderId,
+          notReadyUrls: readiness.notReadyUrls,
+        });
+        const finalReadiness = await waitForDesignAssetsReady(designUrls, {
+          attempts: 5,
+          delayMs: 60000,
+          concurrency: 3,
+        });
+        if (!finalReadiness.ready) {
+          await upsertOrderMetafield(
+            shopifyOrderId,
+            'printoteca',
+            'status',
+            'failed',
+            req.app.locals.env
+          );
+          await upsertOrderMetafield(
+            shopifyOrderId,
+            'printoteca',
+            'last_error',
+            'Design files not ready after 5 minutes',
+            req.app.locals.env
+          );
+          await addRemoveOrderTags(
+            shopifyOrderId,
+            ['printoteca:failed'],
+            ['printoteca:pending_assets'],
+            req.app.locals.env
+          );
+          logger.warn('Design assets not ready after retries', {
+            shopifyOrderId,
+            notReadyUrls: finalReadiness.notReadyUrls,
+          });
+          return;
+        }
+      }
+      await addRemoveOrderTags(
+        shopifyOrderId,
+        [],
+        ['printoteca:pending_assets'],
+        req.app.locals.env
+      );
 
       try {
         const response = await printotecaService.createOrder(transformed, req.app.locals.env);
@@ -167,6 +249,38 @@ async function handleOrdersPaid(req, res) {
         }
       } catch (error) {
         const errorMessage = error?.message || 'Printoteca create failed';
+        const responseData = error?.response?.data || '';
+        const responseText = typeof responseData === 'string' ? responseData.toLowerCase() : '';
+        if (responseText.includes('design') && responseText.includes('invalid')) {
+          const retryReady = await waitForDesignAssetsReady(designUrls, {
+            attempts: 5,
+            delayMs: 60000,
+            concurrency: 3,
+          });
+          if (retryReady.ready) {
+            const retryResponse = await printotecaService.createOrder(transformed, req.app.locals.env);
+            logJson('PRINTOTECA_RESPONSE', retryResponse);
+            const retryId = printotecaService.extractPrintotecaId(retryResponse);
+            if (retryId) {
+              await savePrintotecaOrderIdMetafield(shopifyOrderId, String(retryId), req.app.locals.env);
+              await savePrintotecaExternalIdMetafield(
+                shopifyOrderId,
+                String(shopifyOrderId),
+                req.app.locals.env
+              );
+              await setShopifyPrintotecaStatusSent(shopifyOrderId, String(retryId), req.app.locals.env);
+              await upsertOrderMetafield(
+                shopifyOrderId,
+                'printoteca',
+                'last_sent_at',
+                new Date().toISOString(),
+                req.app.locals.env
+              );
+              await upsertOrderMetafield(shopifyOrderId, 'printoteca', 'last_error', '', req.app.locals.env);
+              return;
+            }
+          }
+        }
         await upsertOrderMetafield(shopifyOrderId, 'printoteca', 'status', 'failed', req.app.locals.env);
         await upsertOrderMetafield(
           shopifyOrderId,

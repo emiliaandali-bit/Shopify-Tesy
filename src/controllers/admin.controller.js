@@ -1,6 +1,7 @@
 const logger = require('../services/logger');
 const { buildPrintotecaOrderFromShopify } = require('../services/transform.service');
 const printotecaService = require('../services/printoteca.service');
+const { waitForDesignAssetsReady } = require('../services/assets.service');
 const {
   fetchShopifyOrder,
   savePrintotecaOrderIdMetafield,
@@ -58,104 +59,172 @@ async function resendOrder(req, res) {
 
   const force = String(req.query.force || 'false').toLowerCase() === 'true';
 
-  try {
-    const reconciliation = await reconcileOrder(shopifyOrderId, req.app.locals.env);
-    if (reconciliation.found && !force) {
-      return res.json({
+  res.status(200).json({ status: 'queued', shopifyOrderId, force });
+
+  setImmediate(async () => {
+    try {
+      const reconciliation = await reconcileOrder(shopifyOrderId, req.app.locals.env);
+      if (reconciliation.found && !force) {
+        logger.info('Resend skipped; order already linked', {
+          shopifyOrderId,
+          printotecaOrderId: reconciliation.printotecaId,
+        });
+        return;
+      }
+
+      const order = await fetchShopifyOrder(shopifyOrderId, req.app.locals.env);
+      if (!order) {
+        logger.warn('Shopify order not found for resend', { shopifyOrderId });
+        return;
+      }
+
+      const normalized = {
+        shopifyOrderId: order.id,
+        createdAt: order.created_at,
+        shippingAddress: order.shipping_address,
+        lineItems: order.line_items || [],
+        tags: order.tags || '',
+        raw: order,
+      };
+
+      await addRemoveOrderTags(
         shopifyOrderId,
-        action: 'relinked',
-        status: 'sent',
-        printotecaOrderId: reconciliation.printotecaId,
-      });
-    }
-
-    const order = await fetchShopifyOrder(shopifyOrderId, req.app.locals.env);
-    if (!order) {
-      return res.status(404).json({ error: 'Shopify order not found' });
-    }
-
-    const normalized = {
-      shopifyOrderId: order.id,
-      createdAt: order.created_at,
-      shippingAddress: order.shipping_address,
-      lineItems: order.line_items || [],
-      tags: order.tags || '',
-      raw: order,
-    };
-
-    await addRemoveOrderTags(
-      shopifyOrderId,
-      ['printoteca:pending'],
-      ['printoteca:failed', 'printoteca:sent', 'printoteca:deleted', 'printoteca:shipped'],
-      req.app.locals.env
-    );
-    await upsertOrderMetafield(shopifyOrderId, 'printoteca', 'status', 'pending', req.app.locals.env);
-    await upsertOrderMetafield(
-      shopifyOrderId,
-      'printoteca',
-      'external_id',
-      String(shopifyOrderId),
-      req.app.locals.env
-    );
-
-    const transformed = buildPrintotecaOrderFromShopify(normalized);
-    const response = await printotecaService.createOrder(transformed, req.app.locals.env);
-    const printotecaId = printotecaService.extractPrintotecaId(response);
-
-    if (printotecaId) {
-      await savePrintotecaOrderIdMetafield(shopifyOrderId, String(printotecaId), req.app.locals.env);
-      await savePrintotecaExternalIdMetafield(
-        shopifyOrderId,
-        String(shopifyOrderId),
+        ['printoteca:pending'],
+        ['printoteca:failed', 'printoteca:sent', 'printoteca:deleted', 'printoteca:shipped'],
         req.app.locals.env
       );
-      await setShopifyPrintotecaStatusSent(shopifyOrderId, String(printotecaId), req.app.locals.env);
+      await upsertOrderMetafield(shopifyOrderId, 'printoteca', 'status', 'pending', req.app.locals.env);
       await upsertOrderMetafield(
         shopifyOrderId,
         'printoteca',
-        'last_sent_at',
-        new Date().toISOString(),
+        'external_id',
+        String(shopifyOrderId),
         req.app.locals.env
       );
-      await upsertOrderMetafield(shopifyOrderId, 'printoteca', 'last_error', '', req.app.locals.env);
+
+      const transformed = buildPrintotecaOrderFromShopify(normalized);
+      const designUrls = Array.from(
+        new Set(
+          (transformed?.items || [])
+            .flatMap((item) => [
+              item?.designs?.front,
+              item?.designs?.back,
+              item?.mockups?.front,
+            ])
+            .filter(Boolean)
+        )
+      );
+
+      const readiness = await waitForDesignAssetsReady(designUrls, {
+        attempts: 1,
+        delayMs: 60000,
+        concurrency: 3,
+      });
+      if (!readiness.ready) {
+        await addRemoveOrderTags(
+          shopifyOrderId,
+          ['printoteca:pending_assets'],
+          ['printoteca:failed'],
+          req.app.locals.env
+        );
+        await upsertOrderMetafield(
+          shopifyOrderId,
+          'printoteca',
+          'status',
+          'pending_assets',
+          req.app.locals.env
+        );
+        await upsertOrderMetafield(
+          shopifyOrderId,
+          'printoteca',
+          'last_error',
+          'Design files still generating; retrying',
+          req.app.locals.env
+        );
+
+        const finalReadiness = await waitForDesignAssetsReady(designUrls, {
+          attempts: 5,
+          delayMs: 60000,
+          concurrency: 3,
+        });
+        if (!finalReadiness.ready) {
+          await upsertOrderMetafield(
+            shopifyOrderId,
+            'printoteca',
+            'status',
+            'failed',
+            req.app.locals.env
+          );
+          await upsertOrderMetafield(
+            shopifyOrderId,
+            'printoteca',
+            'last_error',
+            'Design files not ready after 5 minutes',
+            req.app.locals.env
+          );
+          await addRemoveOrderTags(
+            shopifyOrderId,
+            ['printoteca:failed'],
+            ['printoteca:pending_assets'],
+            req.app.locals.env
+          );
+          return;
+        }
+      }
+
       await addRemoveOrderTags(
         shopifyOrderId,
-        ['printoteca:sent'],
-        ['printoteca:pending', 'printoteca:failed', 'printoteca:deleted'],
+        [],
+        ['printoteca:pending_assets'],
         req.app.locals.env
       );
-    }
 
-    return res.json({
-      shopifyOrderId,
-      action: force ? 'forced' : 'sent',
-      status: printotecaId ? 'sent' : 'failed',
-      printotecaOrderId: printotecaId,
-    });
-  } catch (error) {
-    await upsertOrderMetafield(
-      shopifyOrderId,
-      'printoteca',
-      'status',
-      'failed',
-      req.app.locals.env
-    );
-    await upsertOrderMetafield(
-      shopifyOrderId,
-      'printoteca',
-      'last_error',
-      error?.message || 'Failed to resend order',
-      req.app.locals.env
-    );
-    await addRemoveOrderTags(
-      shopifyOrderId,
-      ['printoteca:failed'],
-      ['printoteca:pending'],
-      req.app.locals.env
-    );
-    logger.error('Failed to resend Printoteca order', { error: error?.message });
-    return res.status(500).json({ error: 'Failed to resend order' });
-  }
+      const response = await printotecaService.createOrder(transformed, req.app.locals.env);
+      const printotecaId = printotecaService.extractPrintotecaId(response);
+
+      if (printotecaId) {
+        await savePrintotecaOrderIdMetafield(shopifyOrderId, String(printotecaId), req.app.locals.env);
+        await savePrintotecaExternalIdMetafield(
+          shopifyOrderId,
+          String(shopifyOrderId),
+          req.app.locals.env
+        );
+        await setShopifyPrintotecaStatusSent(shopifyOrderId, String(printotecaId), req.app.locals.env);
+        await upsertOrderMetafield(
+          shopifyOrderId,
+          'printoteca',
+          'last_sent_at',
+          new Date().toISOString(),
+          req.app.locals.env
+        );
+        await upsertOrderMetafield(shopifyOrderId, 'printoteca', 'last_error', '', req.app.locals.env);
+      }
+    } catch (error) {
+      await upsertOrderMetafield(
+        shopifyOrderId,
+        'printoteca',
+        'status',
+        'failed',
+        req.app.locals.env
+      );
+      await upsertOrderMetafield(
+        shopifyOrderId,
+        'printoteca',
+        'last_error',
+        error?.message || 'Failed to resend order',
+        req.app.locals.env
+      );
+      await addRemoveOrderTags(
+        shopifyOrderId,
+        ['printoteca:failed'],
+        ['printoteca:pending'],
+        req.app.locals.env
+      );
+      logger.error('Failed to resend Printoteca order', { error: error?.message });
+    }
+  });
+
+  return undefined;
 }
 
 module.exports = {
