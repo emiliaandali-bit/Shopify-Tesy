@@ -1,0 +1,424 @@
+const { SIZE_MAP, WORDING_MAP, SKU_REPLACEMENTS } = require('../constants/warehouseMappings');
+const logger = require('./logger');
+
+function normalizeSku(sku) {
+  if (!sku) return '';
+  let normalized = String(sku).trim();
+  Object.entries(SKU_REPLACEMENTS).forEach(([from, to]) => {
+    normalized = normalized.split(from).join(to);
+  });
+  return normalized.toUpperCase();
+}
+
+function normalizeSize(value) {
+  if (!value) return value;
+  const normalized = String(value).trim().toLowerCase();
+  return SIZE_MAP[normalized] || value;
+}
+
+function normalizePropertyName(name) {
+  if (!name) return '';
+  const key = String(name).trim().toLowerCase();
+  return WORDING_MAP[key] || name;
+}
+
+function normalizeDesignUrl(url) {
+  if (!url) return undefined;
+  const [base] = String(url).split('?');
+  return base;
+}
+
+function extractDesigns(properties) {
+  const props = Array.isArray(properties) ? properties : [];
+  let frontDesignUrl;
+  let backDesignUrl;
+  let customizationImageUrl;
+
+  props.forEach((prop) => {
+    const key = prop?.name;
+    const value = prop?.value;
+    if (key === '_tib_design_link_1' && value) {
+      frontDesignUrl = value;
+    } else if (key === '_tib_design_link_2' && value) {
+      backDesignUrl = value;
+    } else if (key === '_customization_image' && value) {
+      customizationImageUrl = value;
+    }
+  });
+
+  const designs = {};
+  const mockups = {};
+  const normalizedFront = normalizeDesignUrl(frontDesignUrl);
+  const normalizedBack = normalizeDesignUrl(backDesignUrl);
+  const normalizedCustomization = normalizeDesignUrl(customizationImageUrl);
+
+  if (normalizedFront) {
+    designs.front = normalizedFront;
+  } else if (normalizedCustomization) {
+    designs.front = normalizedCustomization;
+  }
+
+  if (normalizedBack) {
+    designs.back = normalizedBack;
+  }
+
+  if (normalizedCustomization) {
+    mockups.front = normalizedCustomization;
+  }
+
+  return {
+    designs: Object.keys(designs).length ? designs : undefined,
+    mockups: Object.keys(mockups).length ? mockups : undefined,
+  };
+}
+
+function buildDescription(lineItem) {
+  const parts = [lineItem?.title, lineItem?.variant_title].filter(Boolean);
+  const props = Array.isArray(lineItem?.properties) ? lineItem.properties : [];
+  if (props.length > 0) {
+    const personalization = props
+      .filter((prop) => prop?.name && !prop.name.startsWith('_tib_'))
+      .map((prop) => `${normalizePropertyName(prop.name)}: ${prop.value}`)
+      .join('; ');
+    if (personalization) {
+      parts.push(`Personalization -> ${personalization}`);
+    }
+  }
+  return parts.join(' | ');
+}
+
+function toIsoString(value) {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toISOString();
+}
+
+function buildShippingAddress(address, customer) {
+  const source = address || customer?.default_address || {};
+  return {
+    firstName: source?.first_name || customer?.first_name || 'Customer',
+    lastName: source?.last_name || customer?.last_name || 'Unknown',
+    company: source?.company || undefined,
+    address1: source?.address1 || '',
+    address2: source?.address2 || undefined,
+    city: source?.city || '',
+    county: source?.province || undefined,
+    postcode: source?.zip || '',
+    country: source?.country || '',
+    phone1: source?.phone || customer?.phone || undefined,
+  };
+}
+
+function isPrintotecaLineItem(line) {
+  if (!line?.sku) return false;
+  const vendorMatch = String(line?.vendor || '').toLowerCase() === 'printoteca';
+  const typeMatch = String(line?.product_type || '').toLowerCase() === 'printoteca';
+  return vendorMatch || typeMatch;
+}
+
+function buildItems(lineItems, options = {}) {
+  const { filterPrintoteca = false } = options;
+  const items = [];
+  (lineItems || []).forEach((line) => {
+    if (filterPrintoteca && !isPrintotecaLineItem(line)) {
+      return;
+    }
+    const sku = normalizeSku(line?.sku || line?.variant_sku || '');
+    const { designs, mockups } = extractDesigns(line?.properties);
+    const description = buildDescription(line);
+    const sizeValue = line?.properties?.find?.((prop) => prop?.name?.toLowerCase() === 'size')?.value;
+    const normalizedSize = normalizeSize(sizeValue);
+
+    items.push({
+      pn: sku,
+      title: [line?.title, line?.variant_title, normalizedSize].filter(Boolean).join(' - '),
+      quantity: Number(line?.quantity || 1),
+      retailPrice: line?.price ? Number(line.price) : undefined,
+      description,
+      designs,
+      mockups,
+    });
+  });
+  return items.filter((item) => item.pn || item.title);
+}
+
+function transformDraftOrderToWarehouse(payload, env) {
+  if (!payload) {
+    return { error: 'Missing draft order payload.' };
+  }
+
+  const items = buildItems(payload?.line_items || []);
+  if (!items.length) {
+    return { error: 'Draft order has no line items.' };
+  }
+
+  const shippingAddress = buildShippingAddress(payload?.shipping_address, payload?.customer);
+  if (!shippingAddress.address1 || !shippingAddress.city || !shippingAddress.postcode) {
+    return { error: 'Draft order missing required shipping address fields.' };
+  }
+
+  const commentParts = [`Draft order ${payload?.name || payload?.id || 'unknown'}`];
+  if (payload?.note) commentParts.push(`note: ${payload.note}`);
+
+  const data = {
+    brandName: env.PRINTOTECA_BRAND_NAME,
+    external_id: String(payload?.id || payload?.name || ''),
+    comment: commentParts.join(', '),
+    currency: payload?.currency || payload?.presentment_currency || 'USD',
+    orderDate: toIsoString(payload?.created_at) || new Date().toISOString(),
+    shipping_address: shippingAddress,
+    shipping: {
+      shippingMethod: env.PRINTOTECA_DEFAULT_SHIPPING_METHOD,
+    },
+    items,
+  };
+
+  console.log('Transformed:', data);
+
+  return {
+    data,
+  };
+}
+
+function transformPaidOrderToWarehouse(payload, env) {
+  if (!payload) {
+    return { error: 'Missing order payload.' };
+  }
+
+  const items = buildItems(payload?.line_items || [], { filterPrintoteca: true });
+  if (!items.length) {
+    return { error: 'Order has no line items.' };
+  }
+
+  const shippingAddress = buildShippingAddress(payload?.shipping_address, payload?.customer);
+  if (!shippingAddress.address1 || !shippingAddress.city || !shippingAddress.postcode) {
+    return { error: 'Order missing required shipping address fields.' };
+  }
+
+  const commentParts = [`Shopify order ${payload?.name || payload?.id || 'unknown'}`];
+  if (payload?.note) commentParts.push(`note: ${payload.note}`);
+
+  const data = {
+    brandName: env.PRINTOTECA_BRAND_NAME,
+    external_id: String(payload?.id || payload?.name || ''),
+    comment: commentParts.join(', '),
+    currency: payload?.currency || payload?.presentment_currency || 'USD',
+    orderDate: toIsoString(payload?.created_at) || new Date().toISOString(),
+    shipping_address: shippingAddress,
+    shipping: {
+      shippingMethod: env.PRINTOTECA_DEFAULT_SHIPPING_METHOD,
+    },
+    items,
+  };
+
+  console.log('Transformed:', data);
+
+  return {
+    data,
+  };
+}
+
+function normalizePhone(phone = '') {
+  const value = String(phone || '').trim();
+  if (!value) return '';
+  return value.startsWith('++') ? value.replace(/^(\++)/, '+') : value;
+}
+
+function formatMoney(value) {
+  if (value === null || value === undefined || value === '') return 0;
+  const numberValue = Number(value);
+  if (Number.isNaN(numberValue)) return 0;
+  return Number(numberValue.toFixed(2));
+}
+
+function pruneNulls(value) {
+  if (Array.isArray(value)) {
+    return value.map(pruneNulls);
+  }
+  if (value && typeof value === 'object') {
+    return Object.entries(value).reduce((acc, [key, item]) => {
+      if (item === null) {
+        return acc;
+      }
+      acc[key] = pruneNulls(item);
+      return acc;
+    }, {});
+  }
+  return value;
+}
+
+function toPropertiesMap(properties = []) {
+  return Object.fromEntries(
+    properties
+      .filter((prop) => prop?.name)
+      .map((prop) => [prop.name, prop.value ?? null])
+  );
+}
+
+function normalizeProperties(input) {
+  if (Array.isArray(input)) {
+    return Object.fromEntries(
+      input
+        .filter((prop) => prop && (prop.name || prop.key))
+        .map((prop) => [prop.name || prop.key, prop.value])
+    );
+  }
+  if (input && typeof input === 'object') {
+    return input;
+  }
+  return {};
+}
+
+function splitName(fullName = '') {
+  const parts = String(fullName).trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return { firstName: '', lastName: '' };
+  }
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: '' };
+  }
+  return { firstName: parts.slice(0, -1).join(' '), lastName: parts.slice(-1)[0] };
+}
+
+function parseOrderProperties(payload) {
+  const rawOrder = payload?.raw || {};
+  const orderName = rawOrder?.name || rawOrder?.id || payload?.shopifyOrderId || '';
+  const comment = rawOrder?.note || `Shopify order ${orderName}`;
+  return {
+    id: String(payload?.shopifyOrderId || ''),
+    external_id: String(payload?.shopifyOrderId || ''),
+    type: 'order',
+    created_at: payload?.createdAt || '',
+    brand: 'Hugs & Mugs',
+    brandName: 'Hugs & Mugs',
+    comment,
+  };
+}
+
+function parseShipping(payload) {
+  const order = payload?.order ? payload.order : payload?.raw ? payload.raw : payload;
+  const ship = order?.shipping_address || order?.shippingAddress || null;
+  const bill = order?.billing_address || order?.billingAddress || null;
+  const addrCandidate =
+    ship &&
+    (ship.first_name ||
+      ship.last_name ||
+      ship.name ||
+      ship.address1 ||
+      ship.city ||
+      ship.zip ||
+      ship.phone)
+      ? ship
+      : bill || {};
+  const nameParts = splitName(addrCandidate?.name || '');
+  const mapped = {
+    shipping_address: {
+      firstName: addrCandidate?.first_name || nameParts.firstName || order?.customer?.first_name || '',
+      lastName: addrCandidate?.last_name || nameParts.lastName || order?.customer?.last_name || '',
+      company: addrCandidate?.company ?? '',
+      address1: addrCandidate?.address1 || '',
+      address2: addrCandidate?.address2 || '',
+      city: addrCandidate?.city || '',
+      county: addrCandidate?.province || '',
+      postcode: addrCandidate?.zip || '',
+      country: addrCandidate?.country || '',
+      phone1: normalizePhone(addrCandidate?.phone || order?.phone || ''),
+    },
+    shipping: {
+      shippingMethod: 'regular',
+    },
+  };
+  logger.info(
+    'Shipping mapping debug',
+    JSON.stringify(
+      {
+        hasShippingAddress: Boolean(order?.shipping_address),
+        hasBillingAddress: Boolean(order?.billing_address),
+        chosen: addrCandidate === ship ? 'shipping' : 'billing',
+        shipKeys: ship ? Object.keys(ship) : null,
+        billKeys: bill ? Object.keys(bill) : null,
+        mapped: {
+          firstName: mapped.shipping_address.firstName,
+          lastName: mapped.shipping_address.lastName,
+          address1: mapped.shipping_address.address1,
+          city: mapped.shipping_address.city,
+          postcode: mapped.shipping_address.postcode,
+          phone1: mapped.shipping_address.phone1,
+        },
+      },
+      null,
+      2
+    )
+  );
+  return mapped;
+}
+
+function parseItems(payload) {
+  const items = (payload?.lineItems || []).map((lineItem) => {
+    const props = normalizeProperties(lineItem?.properties);
+    const designFront = props._tib_design_link_1 || null;
+    const designBack = props._tib_design_link_2 || null;
+    const mockupFront = props._customization_image || null;
+    const item = {
+      pn: lineItem?.sku ?? '',
+      title: lineItem?.title ?? '',
+      quantity: Number(lineItem?.quantity ?? 0),
+      retailPrice: formatMoney(lineItem?.price),
+      description: lineItem?.name ?? lineItem?.title ?? '',
+      designs: {
+        front: designFront,
+        back: designBack,
+      },
+      mockups: {
+        front: mockupFront,
+      },
+    };
+    return pruneNulls(item);
+  });
+  return { items };
+}
+
+function buildPrintotecaOrderFromShopify(payload) {
+  const order = parseOrderProperties(payload);
+  const shipping = parseShipping(payload);
+  const items = parseItems(payload);
+
+  return {
+    id: order.id,
+    external_id: order.external_id,
+    type: order.type,
+    created_at: order.created_at,
+    brand: order.brand,
+    brandName: order.brandName,
+    comment: order.comment,
+    shipping_address: shipping.shipping_address,
+    shipping: shipping.shipping,
+    items: items.items,
+  };
+}
+
+function buildPrintotecaCreateBodyFromShopify(payload) {
+  const fullOrder = buildPrintotecaOrderFromShopify(payload);
+  return {
+    brandName: fullOrder.brandName,
+    comment: fullOrder.comment,
+    external_id: fullOrder.external_id,
+    shipping_address: fullOrder.shipping_address,
+    shipping: fullOrder.shipping,
+    items: fullOrder.items,
+  };
+}
+
+module.exports = {
+  transformDraftOrderToWarehouse,
+  transformPaidOrderToWarehouse,
+  buildPrintotecaOrderFromShopify,
+  buildPrintotecaCreateBodyFromShopify,
+  parseOrderProperties,
+  parseShipping,
+  parseItems,
+  formatMoney,
+  pruneNulls,
+  normalizeProperties,
+};
